@@ -53,3 +53,19 @@ async def create_campaing(body: dict[str, Any]):
 
     data.append(new)
     return {"campaign": new}
+
+@app.put("/campaigns/{id}")
+async def update_campaign(id: int, body: dict[str, Any]):
+
+    for index, campaign in enumerate(data):
+        if campaign.get("campaign_id") == id:
+            
+            update : Any = {
+                "campaign_id": id,
+                "name": body.get("name"),
+                "due_date": body.get("due_date"),
+                "create_at": campaign.get("create_at")
+            }
+            data[index]=update
+            return {"campaign": update}
+    raise HTTPException(status_code=404)
