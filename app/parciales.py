@@ -1,165 +1,217 @@
-from typing import Annotated
+from typing import Optional
+from uuid import UUID
 from datetime import date
-from fastapi import APIRouter, Form, HTTPException, Request, Depends
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+ 
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
-
+ 
 from .database import get_db
 from . import models
-
+ 
+# ── Configuración ─────────────────────────────────────────────────────────────
+ 
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
-
-router = APIRouter(prefix="/parciales", tags=["parciales"])
-jinja2_template = Jinja2Templates(directory="templates")
-
-
-# ── Utilidad: verificar que el request viene de un docente autenticado ────────
-
-def get_docente_from_cookie(request: Request, db: Session) -> models.Docente:
+ALGORITHM  = "HS256"
+ 
+router  = APIRouter(prefix="/parciales", tags=["Parciales"])
+bearer  = HTTPBearer()
+ 
+ 
+# ── Schemas ───────────────────────────────────────────────────────────────────
+ 
+class ParcialCreate(BaseModel):
+    nombre_parcial: Optional[str]  = None
+    fecha:          Optional[date] = None
+    valoracion:     Optional[int]  = None
+ 
+ 
+class ParcialUpdate(BaseModel):
+    nombre_parcial: Optional[str]  = None
+    fecha:          Optional[date] = None
+    valoracion:     Optional[int]  = None
+ 
+ 
+class ParcialOut(BaseModel):
+    id_parcial:     UUID
+    nombre_parcial: Optional[str]
+    fecha:          Optional[date]
+    valoracion:     Optional[int]
+    id_materia:     Optional[UUID]
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+# ── Dependencia: extraer docente del token ────────────────────────────────────
+ 
+def get_docente_id(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+) -> UUID:
     """
-    Extrae y valida el JWT de la cookie. Lanza 401/403 si no es docente.
-    Devuelve la instancia Docente del usuario autenticado.
+    Decodifica el JWT del header Authorization: Bearer <token>
+    y devuelve el id_usuario (UUID) del docente autenticado.
+    Lanza 401 si el token es inválido, expirado o el rol no es 'docente'.
     """
-    access_token = request.cookies.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=401, detail="No autenticado")
+    token = credentials.credentials
     try:
-        payload = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
-    except (InvalidTokenError, ExpiredSignatureError):
-        raise HTTPException(status_code=401, detail="Sesión expirada o inválida")
-
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+ 
     if payload.get("rol") != "docente":
-        raise HTTPException(status_code=403, detail="Solo los docentes pueden realizar esta acción")
-
-    ci = payload.get("sub")
-    usuario = db.query(models.Usuario).filter(models.Usuario.ci == ci).first()
-    if usuario is None or usuario.docente is None:
-        raise HTTPException(status_code=401, detail="Docente no encontrado")
-
-    return usuario.docente
-
-
-def get_materia_del_docente(sigla: str, docente: models.Docente, db: Session) -> models.Materia:
-    """Verifica que la materia exista y pertenezca al docente autenticado."""
-    materia = db.query(models.Materia).filter(models.Materia.sigla == sigla).first()
+        raise HTTPException(status_code=403, detail="Acceso solo para docentes")
+ 
+    return UUID(payload["sub"])
+ 
+ 
+# ── Helper: verificar que la materia pertenece al docente ─────────────────────
+ 
+def get_materia_del_docente(
+    id_materia: UUID,
+    docente_id: UUID,
+    db: Session,
+) -> models.Materia:
+    """
+    Retorna la materia si existe y le pertenece al docente.
+    Lanza 404 o 403 según corresponda.
+    """
+    materia = db.query(models.Materia).filter(
+        models.Materia.id_materia == id_materia
+    ).first()
+ 
     if materia is None:
-        raise HTTPException(status_code=404, detail=f"Materia '{sigla}' no encontrada")
-    if materia.id_docente != docente.id_usuario:
-        raise HTTPException(status_code=403, detail="No tienes permiso sobre esta materia")
+        raise HTTPException(status_code=404, detail="Materia no encontrada")
+ 
+    if materia.id_docente != docente_id:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso sobre esta materia",
+        )
+ 
     return materia
-
-
-# ── Páginas HTML ──────────────────────────────────────────────────────────────
-
-@router.get("/nuevo", response_class=HTMLResponse)
-def form_nuevo_parcial(request: Request, db: Session = Depends(get_db)):
-    docente = get_docente_from_cookie(request, db)
-    return jinja2_template.TemplateResponse(
-        "parcial_nuevo.html",
+ 
+ 
+# ── GET /parciales/mis-materias ───────────────────────────────────────────────
+ 
+@router.get("/mis-materias")
+def listar_mis_materias(
+    docente_id: UUID = Depends(get_docente_id),
+    db: Session     = Depends(get_db),
+):
+    """Devuelve todas las materias asignadas al docente autenticado."""
+    materias = db.query(models.Materia).filter(
+        models.Materia.id_docente == docente_id
+    ).all()
+ 
+    return [
         {
-            "request": request,
-            "materias": docente.materias,
-        },
-    )
-
-
-@router.get("/{id_parcial}/editar", response_class=HTMLResponse)
-def form_editar_parcial(id_parcial: int, request: Request, db: Session = Depends(get_db)):
-    docente = get_docente_from_cookie(request, db)
-    parcial = db.query(models.Parcial).filter(models.Parcial.id_parcial == id_parcial).first()
-    if parcial is None:
-        raise HTTPException(status_code=404, detail="Parcial no encontrado")
-    # Verificar que la materia del parcial pertenece a este docente
-    get_materia_del_docente(parcial.sigla_materia, docente, db)
-    return jinja2_template.TemplateResponse(
-        "parcial_editar.html",
-        {
-            "request": request,
-            "parcial": parcial,
-            "materias": docente.materias,
-        },
-    )
-
-
-# ── Endpoints POST ────────────────────────────────────────────────────────────
-
-@router.post("/nuevo")
+            "id_materia": m.id_materia,
+            "sigla":      m.sigla,
+            "horario":    m.horario,
+            "anio":       m.anio,
+        }
+        for m in materias
+    ]
+ 
+ 
+# ── GET /parciales/{id_materia} ───────────────────────────────────────────────
+ 
+@router.get("/{id_materia}", response_model=list[ParcialOut])
+def listar_parciales(
+    id_materia: UUID,
+    docente_id: UUID    = Depends(get_docente_id),
+    db: Session         = Depends(get_db),
+):
+    """Lista todos los parciales de una materia que pertenece al docente."""
+    get_materia_del_docente(id_materia, docente_id, db)
+ 
+    parciales = db.query(models.Parcial).filter(
+        models.Parcial.id_materia == id_materia
+    ).all()
+ 
+    return parciales
+ 
+ 
+# ── POST /parciales/{id_materia} ──────────────────────────────────────────────
+ 
+@router.post("/{id_materia}", response_model=ParcialOut, status_code=status.HTTP_201_CREATED)
 def crear_parcial(
-    request: Request,
-    nombre_parcial: Annotated[str, Form()],
-    fecha:          Annotated[date, Form()],
-    valoracion:     Annotated[int, Form()],
-    sigla_materia:  Annotated[str, Form()],
-    db: Session = Depends(get_db),
+    id_materia: UUID,
+    body:       ParcialCreate,
+    docente_id: UUID    = Depends(get_docente_id),
+    db: Session         = Depends(get_db),
 ):
-    docente = get_docente_from_cookie(request, db)
-    get_materia_del_docente(sigla_materia, docente, db)
-
-    nuevo_parcial = models.Parcial(
-        nombre_parcial=nombre_parcial,
-        fecha=fecha,
-        valoracion=valoracion,
-        sigla_materia=sigla_materia,
+    """Crea un nuevo parcial en una materia del docente."""
+    get_materia_del_docente(id_materia, docente_id, db)
+ 
+    nuevo = models.Parcial(
+        nombre_parcial = body.nombre_parcial,
+        fecha          = body.fecha,
+        valoracion     = body.valoracion,
+        id_materia     = id_materia,
     )
-    db.add(nuevo_parcial)
+    db.add(nuevo)
     db.commit()
-    db.refresh(nuevo_parcial)
-    return RedirectResponse("/users/dashboard", status_code=302)
-
-
-@router.post("/{id_parcial}/editar")
+    db.refresh(nuevo)
+    return nuevo
+ 
+ 
+# ── PUT /parciales/{id_materia}/{id_parcial} ──────────────────────────────────
+ 
+@router.put("/{id_materia}/{id_parcial}", response_model=ParcialOut)
 def editar_parcial(
-    id_parcial: int,
-    request: Request,
-    nombre_parcial: Annotated[str, Form()],
-    fecha:          Annotated[date, Form()],
-    valoracion:     Annotated[int, Form()],
-    sigla_materia:  Annotated[str, Form()],
-    db: Session = Depends(get_db),
+    id_materia: UUID,
+    id_parcial: UUID,
+    body:       ParcialUpdate,
+    docente_id: UUID    = Depends(get_docente_id),
+    db: Session         = Depends(get_db),
 ):
-    docente = get_docente_from_cookie(request, db)
-
-    parcial = db.query(models.Parcial).filter(models.Parcial.id_parcial == id_parcial).first()
+    """Edita un parcial existente. Solo actualiza los campos enviados."""
+    get_materia_del_docente(id_materia, docente_id, db)
+ 
+    parcial = db.query(models.Parcial).filter(
+        models.Parcial.id_parcial  == id_parcial,
+        models.Parcial.id_materia  == id_materia,
+    ).first()
+ 
     if parcial is None:
         raise HTTPException(status_code=404, detail="Parcial no encontrado")
-
-    # Verificar que la materia actual del parcial pertenece al docente
-    get_materia_del_docente(parcial.sigla_materia, docente, db)
-
-    # Si cambió la materia, verificar que la nueva también es suya
-    if sigla_materia != parcial.sigla_materia:
-        get_materia_del_docente(sigla_materia, docente, db)
-
-    parcial.nombre_parcial = nombre_parcial
-    parcial.fecha          = fecha
-    parcial.valoracion     = valoracion
-    parcial.sigla_materia  = sigla_materia
-
+ 
+    # Actualiza solo los campos que vienen en el body (partial update)
+    update_data = body.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(parcial, field, value)
+ 
     db.commit()
     db.refresh(parcial)
-    return RedirectResponse("/users/dashboard", status_code=302)
-
-
-# ── Endpoints JSON (consulta) ─────────────────────────────────────────────────
-
-@router.get("/materia/{sigla}")
-def listar_parciales_materia(sigla: str, request: Request, db: Session = Depends(get_db)):
-    """Lista todos los parciales de una materia. Solo el docente dueño puede consultarlos."""
-    docente = get_docente_from_cookie(request, db)
-    materia = get_materia_del_docente(sigla, docente, db)
-    return {
-        "sigla":     materia.sigla,
-        "horario":   materia.horario,
-        "parciales": [
-            {
-                "id_parcial":     p.id_parcial,
-                "nombre_parcial": p.nombre_parcial,
-                "fecha":          p.fecha,
-                "valoracion":     p.valoracion,
-            }
-            for p in materia.parciales
-        ],
-    }
+    return parcial
+ 
+ 
+# ── DELETE /parciales/{id_materia}/{id_parcial} ───────────────────────────────
+ 
+@router.delete("/{id_materia}/{id_parcial}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_parcial(
+    id_materia: UUID,
+    id_parcial: UUID,
+    docente_id: UUID    = Depends(get_docente_id),
+    db: Session         = Depends(get_db),
+):
+    """Elimina un parcial (y sus notas en cascada) de una materia del docente."""
+    get_materia_del_docente(id_materia, docente_id, db)
+ 
+    parcial = db.query(models.Parcial).filter(
+        models.Parcial.id_parcial == id_parcial,
+        models.Parcial.id_materia == id_materia,
+    ).first()
+ 
+    if parcial is None:
+        raise HTTPException(status_code=404, detail="Parcial no encontrado")
+ 
+    db.delete(parcial)
+    db.commit()
