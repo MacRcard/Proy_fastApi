@@ -1,7 +1,6 @@
 import uuid
 from typing import Optional, Annotated
 
-import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -14,51 +13,6 @@ from . import models
 router = APIRouter(prefix="/materias", tags=["inscritos"])
 
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
-
-
-# ── Auth: extrae y valida el token JWT igual que en main.py ──────────────────
-
-# def get_current_docente(
-#     request: Request,
-#     db: Session = Depends(get_db),
-# ) -> models.Usuario:
-#     auth_header = request.headers.get("Authorization", "")
-#     if not auth_header.startswith("Bearer "):
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Token no proporcionado.",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         )
-#     token = auth_header.removeprefix("Bearer ").strip()
-#     try:
-#         payload = jwt.decode(token, key=SECRET_KEY, algorithms=["HS256"])
-#     except ExpiredSignatureError:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="El token ha expirado.",
-#         )
-#     except InvalidTokenError:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Token inválido.",
-#         )
-#     user_id: str = payload.get("sub")
-#     if not user_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Token sin identificador de usuario.",
-#         )
-#     usuario = db.query(models.Usuario).filter(
-#         models.Usuario.id_usuario == uuid.UUID(user_id)
-#     ).first()
-
-#     if not usuario or usuario.rol != "docente":
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Acceso restringido a docentes.",
-#         )
-#     return usuario
-
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -94,33 +48,6 @@ class BulkInscritosResponse(BaseModel):
     ya_inscritos: int
     resultados: list[FilaResultado]
 
-
-# ── GET /materias/mis-materias ────────────────────────────────────────────────
-
-# @router.get(
-#     "/mis-materias",
-#     summary="Lista las materias del docente autenticado",
-# )
-# def listar_mis_materias(
-#     db: Session = Depends(get_db),
-#     docente_actual: models.Usuario = Depends(get_current_docente),
-# ):
-#     materias = (
-#         db.query(models.Materia)
-#         .filter(models.Materia.id_docente == docente_actual.id_usuario)
-#         .all()
-#     )
-#     return [
-#         {
-#             "id_materia": str(m.id_materia),
-#             "sigla":      m.sigla,
-#             "horario":    m.horario,
-#             "anio":       m.anio,
-#         }
-#         for m in materias
-#     ]
-
-
 # ── POST /materias/{id_materia}/inscritos/bulk ────────────────────────────────
 
 @router.post(
@@ -133,7 +60,6 @@ def bulk_inscritos(
     id_materia: uuid.UUID,
     body: BulkInscritosRequest,
     db: Session = Depends(get_db),
-    # docente_actual: models.Usuario = Depends(get_current_docente),
 ):
     """
     Recibe una lista de estudiantes en JSON e inscribe a todos en la materia indicada.
@@ -145,7 +71,6 @@ def bulk_inscritos(
     Todo ocurre en una sola transacción. Si algo falla → rollback completo.
     """
 
-    # 1. Verificar que la materia existe y pertenece al docente autenticado
     materia: models.Materia | None = db.query(models.Materia).filter(
         models.Materia.id_materia == id_materia,
         # models.Materia.id_docente == docente_actual.id_usuario,
@@ -157,11 +82,9 @@ def bulk_inscritos(
             detail="Materia no encontrada o no tienes permiso sobre ella.",
         )
 
-    # 2. Extraer CIs y matrículas del payload para hacer las consultas en bulk
     cis        = [e.ci_estudiante for e in body.estudiantes]
     matriculas = [e.matricula     for e in body.estudiantes]
 
-    # 3. Una sola query: todos los estudiantes que ya existen en BD
     existentes_bd: list[models.Estudiante] = db.query(models.Estudiante).filter(
         (models.Estudiante.ci_estudiante.in_(cis)) |
         (models.Estudiante.matricula.in_(matriculas))
@@ -170,7 +93,6 @@ def bulk_inscritos(
     por_ci:  dict[int, models.Estudiante] = {e.ci_estudiante: e for e in existentes_bd}
     por_mat: dict[int, models.Estudiante] = {e.matricula:     e for e in existentes_bd}
 
-    # 4. Una sola query: IDs ya inscritos en esta materia
     inscritos_actuales: set[uuid.UUID] = {
         row.id_estudiante
         for row in db.query(models.Inscrito.id_estudiante).filter(
@@ -178,14 +100,12 @@ def bulk_inscritos(
         ).all()
     }
 
-    # 5. Clasificar cada estudiante del payload
     a_crear:     list[dict] = []
     a_inscribir: list[dict] = []
     resultados:  list[FilaResultado] = []
 
     creados = existentes_count = inscripciones_nuevas = ya_inscritos_count = 0
 
-    # Cache local: evita duplicados dentro del mismo JSON
     nuevos_uuid: dict[int, uuid.UUID] = {}  # ci_estudiante → uuid
 
     for est in body.estudiantes:
@@ -197,13 +117,11 @@ def bulk_inscritos(
             existentes_count += 1
 
         elif est.ci_estudiante in nuevos_uuid:
-            # Duplicado en el mismo JSON → reutilizar UUID ya generado
             est_id   = nuevos_uuid[est.ci_estudiante]
             es_nuevo = False
             existentes_count += 1
 
         else:
-            # Estudiante nuevo: generar UUID y acumular para bulk insert
             est_id = uuid.uuid4()
             nuevos_uuid[est.ci_estudiante] = est_id
             a_crear.append({
@@ -218,7 +136,6 @@ def bulk_inscritos(
             es_nuevo = True
             creados += 1
 
-        # Verificar si ya estaba inscrito
         if est_id in inscritos_actuales:
             ya_inscritos_count += 1
             resultados.append(FilaResultado(
@@ -231,7 +148,6 @@ def bulk_inscritos(
             ))
             continue
 
-        # Acumular para bulk insert en inscrito
         a_inscribir.append({"id_estudiante": est_id, "id_materia": id_materia})
         inscritos_actuales.add(est_id)
         inscripciones_nuevas += 1
@@ -245,7 +161,6 @@ def bulk_inscritos(
             detalle="Estudiante creado e inscrito." if es_nuevo else "Estudiante inscrito.",
         ))
 
-    # 6. Bulk insert: una sola sentencia SQL por tabla, un solo commit
     try:
         if a_crear:
             db.execute(pg_insert(models.Estudiante).values(a_crear))

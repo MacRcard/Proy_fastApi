@@ -12,8 +12,6 @@ from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 from .database import get_db
 from . import models
  
-# ── Configuración ─────────────────────────────────────────────────────────────
- 
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
 ALGORITHM  = "HS256"
  
@@ -21,19 +19,17 @@ router  = APIRouter(prefix="/parciales", tags=["Parciales"])
 bearer  = HTTPBearer()
  
  
-# ── Schemas ───────────────────────────────────────────────────────────────────
+##### schemas ###
  
 class ParcialCreate(BaseModel):
     nombre_parcial: Optional[str]  = None
     fecha:          Optional[date] = None
     valoracion:     Optional[int]  = None
- 
- 
+
 class ParcialUpdate(BaseModel):
     nombre_parcial: Optional[str]  = None
     fecha:          Optional[date] = None
     valoracion:     Optional[int]  = None
- 
  
 class ParcialOut(BaseModel):
     id_parcial:     UUID
@@ -51,9 +47,7 @@ class ParcialOut(BaseModel):
 def get_docente_id(
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
 ) -> UUID:
-    """
-    Decodifica el JWT del header Authorization: Bearer <token>
-    y devuelve el id_usuario (UUID) del docente autenticado.
+    """Devuelve el id_usuario (UUID) del docente autenticado.
     Lanza 401 si el token es inválido, expirado o el rol no es 'docente'.
     """
     token = credentials.credentials
@@ -97,14 +91,13 @@ def get_materia_del_docente(
     return materia
  
  
-# ── GET /parciales/mis-materias ───────────────────────────────────────────────
+###### Materias por docente #####
  
 @router.get("/mis-materias")
 def listar_mis_materias(
     docente_id: UUID = Depends(get_docente_id),
     db: Session     = Depends(get_db),
 ):
-    """Devuelve todas las materias asignadas al docente autenticado."""
     materias = db.query(models.Materia).filter(
         models.Materia.id_docente == docente_id
     ).all()
@@ -118,8 +111,38 @@ def listar_mis_materias(
         }
         for m in materias
     ]
- 
- 
+
+
+# ── GET /parciales/{id_materia}/estudiantes 
+
+@router.get("/{id_materia}/estudiantes")
+def listar_estudiantes_inscritos(
+    id_materia: UUID,
+    docente_id: UUID = Depends(get_docente_id),
+    db: Session      = Depends(get_db),
+):
+    """Devuelve todos los estudiantes inscritos en una materia del docente."""
+    get_materia_del_docente(id_materia, docente_id, db)
+
+    inscritos = (
+        db.query(models.Estudiante)
+        .join(models.Inscrito, models.Inscrito.id_estudiante == models.Estudiante.id_estudiante)
+        .filter(models.Inscrito.id_materia == id_materia)
+        .all()
+    )
+    return [
+        {
+            "id_estudiante": e.id_estudiante,
+            "ci_estudiante": e.ci_estudiante,
+            "matricula":     e.matricula,
+            "nombre":        e.nombre,
+            "apellido":      e.apellido,
+            "anio":          e.anio,
+            "mencion":       e.mencion,
+        }
+        for e in inscritos
+    ]
+
 # ── GET /parciales/{id_materia} ───────────────────────────────────────────────
  
 @router.get("/{id_materia}", response_model=list[ParcialOut])
@@ -136,7 +159,6 @@ def listar_parciales(
     ).all()
  
     return parciales
- 
  
 # ── POST /parciales/{id_materia} ──────────────────────────────────────────────
  
@@ -160,7 +182,6 @@ def crear_parcial(
     db.commit()
     db.refresh(nuevo)
     return nuevo
- 
  
 # ── PUT /parciales/{id_materia}/{id_parcial} ──────────────────────────────────
  

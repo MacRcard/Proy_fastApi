@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
-from fastapi import FastAPI, Form, HTTPException, Request, Depends
+from fastapi import APIRouter, FastAPI, Form, HTTPException, Depends
+from fastapi.security import HTTPBearer
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import  RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from .parciales import router as parciales_router
 from .notas_docente import router as notas_docentes_router
@@ -21,24 +22,20 @@ TOKEN_SECONDS_EXP = 60*60*24*10
 app = FastAPI()
 
 models.Base.metadata.create_all(bind=engine)
-jinja2_template = Jinja2Templates(directory="templates")
 app.include_router(parciales_router)
 app.include_router(notas_docentes_router)
 app.include_router(notas_estudiantes_router)
 app.include_router(inscritos_router)
 
-
-# ── Utilidades de autenticación ──────────────────────────────────────────────
+# para la autenticacion
 
 def get_user_by_username(username: str, db: Session) -> models.Usuario | None:
     """Busca un usuario por su username (campo username en tabla usuario)."""
     return db.query(models.Usuario).filter(models.Usuario.username == username).first()
 
-
 def hash_password(plain_password: str) -> str:
     hashed = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
     return hashed.decode("utf-8")
-
 
 def authenticate_password(hashed_password: str, plain_password: str) -> bool:
     return bcrypt.checkpw(
@@ -46,22 +43,13 @@ def authenticate_password(hashed_password: str, plain_password: str) -> bool:
         hashed_password.encode("utf-8"),
     )
 
-
 def create_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_SECONDS_EXP)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
 
-
-# ── Páginas ───────────────────────────────────────────────────────────────────
-
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return jinja2_template.TemplateResponse("index.html", {"request": request})
-
-
-# ── Endpoints de login ────────────────────────────────────────────────────────
+###### login #####
 
 @app.post("/users/login/docente")
 def login_docente(
@@ -69,10 +57,8 @@ def login_docente(
     password: Annotated[str, Form()],
     db: Session = Depends(get_db),
 ):
-    """
-    Autentica a un docente por username y password (bcrypt en tabla usuario).
-    Devuelve el token JWT directamente en el cuerpo de la respuesta JSON.
-    """
+    """Autentica docente [username y password]
+    Devuelve token JWT"""
     user = get_user_by_username(username, db)
 
     if user is None or user.rol != "docente":
@@ -81,18 +67,9 @@ def login_docente(
     if not authenticate_password(user.password, password):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
-    # nombre y apellido viven en la tabla docente
-    docente = user.docente  # relación ORM hacia tabla docente
-    nombre   = docente.nombre_docente  if docente else ""
-    apellido = docente.apellido_docente if docente else ""
-    titulo   = docente.titulo           if docente else None
-
     token = create_token({
         "sub":      str(user.id_usuario),
         "username": user.username,
-        "nombre":   nombre,
-        "apellido": apellido,
-        "titulo":   titulo,
         "rol":      user.rol,
     })
 
@@ -104,36 +81,6 @@ def login_docente(
             "expires_in":   TOKEN_SECONDS_EXP,
         },
     )
-
-
-# ── Dashboard ─────────────────────────────────────────────────────────────────
-
-@app.get("/users/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
-    """
-    El cliente debe enviar el token en el header Authorization: Bearer <token>.
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return RedirectResponse("/login", status_code=302)
-
-    access_token = auth_header.removeprefix("Bearer ").strip()
-    try:
-        data_user = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"])
-        return jinja2_template.TemplateResponse(
-            "dashboard.html",
-            {
-                "request":  request,
-                "user":     data_user["nombre"],
-                "apellido": data_user["apellido"],
-                "rol":      data_user["rol"],
-            },
-        )
-    except (InvalidTokenError, ExpiredSignatureError):
-        return RedirectResponse("/login", status_code=302)
-
-
-# ── Endpoints de consulta ─────────────────────────────────────────────────────
 
 @app.get("/usuarios/")
 def read_users(db: Session = Depends(get_db)):
@@ -154,14 +101,11 @@ def read_users(db: Session = Depends(get_db)):
     return resultado
 
 
-# ── Endpoints de estudiantes (sin tabla usuario) ──────────────────────────────
+###### Estudiantes #####
 
 @app.get("/estudiantes/")
 def read_estudiantes(db: Session = Depends(get_db)):
-    """
-    Los estudiantes no tienen cuenta en tabla usuario en esta BD;
-    se consultan directamente desde la tabla estudiante.
-    """
+    """Todos los estudiantes"""
     estudiantes = db.query(models.Estudiante).all()
     return [
         {
@@ -175,6 +119,7 @@ def read_estudiantes(db: Session = Depends(get_db)):
         }
         for e in estudiantes
     ]
+####### Logout ######
 
 @app.post("/users/logout")
 def logout():

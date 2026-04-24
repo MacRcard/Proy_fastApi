@@ -1,10 +1,10 @@
 import uuid
 from typing import Optional
 
-from fastapi.security import HTTPBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -12,33 +12,26 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .database import get_db
 from . import models
 
-router = APIRouter(prefix="/materias", tags=["notas_docente"])
-bearer  = HTTPBearer()
+router = APIRouter(prefix="/materias", tags=["notas"])
+bearer = HTTPBearer()
 
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
 ALGORITHM  = "HS256"
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-
 def get_current_docente(
-    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: Session = Depends(get_db),
 ) -> models.Usuario:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token no proporcionado.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = auth_header.removeprefix("Bearer ").strip()
+    token = credentials.credentials
     try:
-        payload = jwt.decode(token, key=SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="El token ha expirado.")
     except InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
+
+    if payload.get("rol") != "docente":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso restringido a docentes.")
 
     user_id: str = payload.get("sub")
     if not user_id:
@@ -48,20 +41,17 @@ def get_current_docente(
         models.Usuario.id_usuario == uuid.UUID(user_id)
     ).first()
 
-    if not usuario or usuario.rol != "docente":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso restringido a docentes.")
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado.")
 
     return usuario
 
-
-# ── Schemas ───────────────────────────────────────────────────────────────────
+###### schemas #####
 
 class NotaInput(BaseModel):
     ci_estudiante: int
     nota: float = Field(..., ge=0)
     observacion: Optional[str] = None
-
-
 class FilaResultado(BaseModel):
     ci_estudiante: int
     nombre: Optional[str] = None
@@ -69,10 +59,8 @@ class FilaResultado(BaseModel):
     estado: str   # "insertada" | "actualizada" | "omitido" | "error"
     detalle: str
 
-
 class BulkNotasRequest(BaseModel):
     notas: list[NotaInput] = Field(..., min_length=1)
-
 
 class BulkNotasResponse(BaseModel):
     id_materia: str
@@ -86,7 +74,6 @@ class BulkNotasResponse(BaseModel):
     errores: int
     resultados: list[FilaResultado]
 
-
 # ── POST /materias/{id_materia}/parciales/{id_parcial}/notas/bulk ─────────────
 
 @router.post(
@@ -99,9 +86,8 @@ def bulk_notas(
     id_materia: uuid.UUID,
     id_parcial: uuid.UUID,
     body: BulkNotasRequest,
-    docente_id: uuid.UUID = Depends(get_current_docente),
     db: Session = Depends(get_db),
-    
+    docente_actual: models.Usuario = Depends(get_current_docente),
 ):
     """
     Recibe una lista de notas en JSON y las asigna a los estudiantes inscritos
@@ -116,10 +102,9 @@ def bulk_notas(
     Todo en una sola transacción. Si falla → rollback completo.
     """
 
-    # 1. Verificar materia del docente autenticado
     materia: models.Materia | None = db.query(models.Materia).filter(
         models.Materia.id_materia == id_materia,
-        models.Materia.id_docente == docente_id.id_usuario,
+        models.Materia.id_docente == docente_actual.id_usuario,
     ).first()
 
     if not materia:
@@ -128,7 +113,6 @@ def bulk_notas(
             detail="Materia no encontrada o no tienes permiso sobre ella.",
         )
 
-    # 2. Verificar que el parcial pertenece a esa materia
     parcial: models.Parcial | None = db.query(models.Parcial).filter(
         models.Parcial.id_parcial == id_parcial,
         models.Parcial.id_materia == id_materia,
@@ -140,7 +124,6 @@ def bulk_notas(
             detail="Parcial no encontrado para esta materia.",
         )
 
-    # 3. Una sola query: todos los estudiantes del payload
     cis_payload = [n.ci_estudiante for n in body.notas]
 
     estudiantes_bd: list[models.Estudiante] = db.query(models.Estudiante).filter(
@@ -149,7 +132,6 @@ def bulk_notas(
 
     por_ci: dict[int, models.Estudiante] = {e.ci_estudiante: e for e in estudiantes_bd}
 
-    # 4. Una sola query: IDs inscritos en esta materia
     inscritos_ids: set[uuid.UUID] = {
         row.id_estudiante
         for row in db.query(models.Inscrito.id_estudiante).filter(
@@ -157,7 +139,6 @@ def bulk_notas(
         ).all()
     }
 
-    # 5. Una sola query: notas ya existentes para este parcial
     notas_existentes: set[uuid.UUID] = {
         n.id_estudiante
         for n in db.query(models.Nota.id_estudiante).filter(
@@ -165,7 +146,6 @@ def bulk_notas(
         ).all()
     }
 
-    # 6. Clasificar cada item del payload
     a_insertar:   list[dict] = []
     a_actualizar: list[dict] = []
     resultados:   list[FilaResultado] = []
@@ -225,7 +205,7 @@ def bulk_notas(
             ))
         else:
             a_insertar.append(fila)
-            notas_existentes.add(estudiante.id_estudiante)  # evitar duplicado en mismo JSON
+            notas_existentes.add(estudiante.id_estudiante)
             insertadas += 1
             resultados.append(FilaResultado(
                 ci_estudiante=item.ci_estudiante,
@@ -235,13 +215,11 @@ def bulk_notas(
                 detalle="Nota registrada correctamente.",
             ))
 
-    # 7. Bulk insert + bulk upsert en una sola transacción
     try:
         if a_insertar:
             db.execute(pg_insert(models.Nota).values(a_insertar))
 
         if a_actualizar:
-            # INSERT ... ON CONFLICT (id_estudiante, id_parcial) DO UPDATE
             stmt = (
                 pg_insert(models.Nota)
                 .values(a_actualizar)
