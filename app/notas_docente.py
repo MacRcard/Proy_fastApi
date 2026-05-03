@@ -1,5 +1,5 @@
-import uuid
-from typing import Optional
+from uuid  import UUID
+from typing import List, Optional
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
@@ -74,6 +74,110 @@ class BulkNotasResponse(BaseModel):
     errores: int
     resultados: list[FilaResultado]
 
+# class EstudianteInscritoOut(BaseModel):
+#     id_estudiante: UUID
+#     ci_estudiante: int
+#     matricula:     int
+#     nombre:        str
+#     apellido:      str
+#     anio:          Optional[int]
+#     mencion:       Optional[str]
+
+#     class Config:
+#         from_attributes = True
+
+# def _get_current_user(
+#     token: str = Depends(HTTPBearer()),
+#     db: Session = Depends(get_db),
+# ) -> models.Usuario:
+#     try:
+#         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=["HS256"])
+#         user_id = payload.get("sub")
+#         if not user_id:
+#             raise HTTPException(status_code=401, detail="Token inválido")
+#     except jwt.ExpiredSignatureError:
+#         raise HTTPException(status_code=401, detail="Token expirado")
+#     except jwt.InvalidTokenError:
+#         raise HTTPException(status_code=401, detail="Token inválido")
+
+#     user = db.query(models.Usuario).filter(models.Usuario.id_usuario == user_id).first()
+#     if not user:
+#         raise HTTPException(status_code=401, detail="Usuario no encontrado")
+#     return user
+
+
+# def _get_materia_or_404(id_materia: UUID, db: Session) -> models.Materia:
+#     obj = db.query(models.Materia).filter(models.Materia.id_materia == id_materia).first()
+#     if not obj:
+#         raise HTTPException(status_code=404, detail="Materia no encontrada")
+#     return obj
+
+
+# def _verificar_acceso_materia(
+#     materia: models.Materia,
+#     user: models.Usuario,
+# ) -> None:
+#     """
+#     Admin → acceso total.
+#     Docente → solo sus materias (id_docente == id_usuario).
+#     Auxiliar → solo sus materias (id_auxiliar == id_usuario).
+#     """
+#     if user.rol == "admin":
+#         return
+
+#     if user.rol == "docente":
+#         if str(materia.id_docente) != str(user.id_usuario):
+#             raise HTTPException(status_code=403, detail="No tienes acceso a esta materia")
+#         return
+
+#     if user.rol == "auxiliar":
+#         if str(materia.id_auxiliar) != str(user.id_usuario):
+#             raise HTTPException(status_code=403, detail="No tienes acceso a esta materia")
+#         return
+
+#     raise HTTPException(status_code=403, detail="Rol no autorizado")
+
+# # ── Endpoint ──────────────────────────────────────────────────────────────────
+
+# @router.get(
+#     "/materias/{id_materia}/estudiantes",
+#     response_model=List[EstudianteInscritoOut],
+#     tags=["Inscritos"],
+# )
+# def get_estudiantes_por_materia(
+#     id_materia: UUID,
+#     db: Session  = Depends(get_db),
+#     user: models.Usuario = Depends(_get_current_user),
+# ):
+#     """
+#     Lista los estudiantes inscritos en una materia.
+#     - Admin: ve cualquier materia.
+#     - Docente: solo sus materias.
+#     - Auxiliar: solo sus materias.
+#     """
+#     materia = _get_materia_or_404(id_materia, db)
+#     _verificar_acceso_materia(materia, user)
+
+#     estudiantes = (
+#         db.query(models.Estudiante)
+#         .join(models.Inscrito, models.Inscrito.id_estudiante == models.Estudiante.id_estudiante)
+#         .filter(models.Inscrito.id_materia == id_materia)
+#         .all()
+#     )
+
+#     return [
+#         EstudianteInscritoOut(
+#             id_estudiante = e.id_estudiante,
+#             ci_estudiante = e.ci_estudiante,
+#             matricula     = e.matricula,
+#             nombre        = e.nombre,
+#             apellido      = e.apellido,
+#             anio          = e.anio,
+#             mencion       = e.mencion,
+#         )
+#         for e in estudiantes
+#     ]
+
 # ── POST /materias/{id_materia}/parciales/{id_parcial}/notas/bulk ─────────────
 
 @router.post(
@@ -83,8 +187,8 @@ class BulkNotasResponse(BaseModel):
     summary="Carga masiva de notas desde JSON",
 )
 def bulk_notas(
-    id_materia: uuid.UUID,
-    id_parcial: uuid.UUID,
+    id_materia: UUID,
+    id_parcial: UUID,
     body: BulkNotasRequest,
     db: Session = Depends(get_db),
     docente_actual: models.Usuario = Depends(get_current_docente),
@@ -132,14 +236,14 @@ def bulk_notas(
 
     por_ci: dict[int, models.Estudiante] = {e.ci_estudiante: e for e in estudiantes_bd}
 
-    inscritos_ids: set[uuid.UUID] = {
+    inscritos_ids: set[UUID] = {
         row.id_estudiante
         for row in db.query(models.Inscrito.id_estudiante).filter(
             models.Inscrito.id_materia == id_materia
         ).all()
     }
 
-    notas_existentes: set[uuid.UUID] = {
+    notas_existentes: set[UUID] = {
         n.id_estudiante
         for n in db.query(models.Nota.id_estudiante).filter(
             models.Nota.id_parcial == id_parcial

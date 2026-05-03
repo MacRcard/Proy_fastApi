@@ -16,7 +16,7 @@ from . import models
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
 ALGORITHM  = "HS256"
  
-router  = APIRouter(prefix="/parciales", tags=["Parciales"])
+router  = APIRouter(prefix="/practicas", tags=["Practicas"])
 bearer  = HTTPBearer()
  
  
@@ -45,11 +45,11 @@ class ParcialOut(BaseModel):
  
 # ── Dependencia: extraer docente del token ────────────────────────────────────
  
-def get_docente_id(
+def get_auxiliar_id(
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
 ) -> UUID:
     """Devuelve el id_usuario (UUID) del docente autenticado.
-    Lanza 401 si el token es inválido, expirado o el rol no es 'docente'.
+    Lanza 401 si el token es inválido, expirado o el rol no es 'auxiliar'.
     """
     token = credentials.credentials
     try:
@@ -59,17 +59,17 @@ def get_docente_id(
     except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
  
-    if payload.get("rol") != "docente":
-        raise HTTPException(status_code=403, detail="Acceso solo para docentes")
+    if payload.get("rol") != "auxiliar":
+        raise HTTPException(status_code=403, detail="Acceso solo para auxiliares")
  
     return UUID(payload["sub"])
  
  
 # ── Helper: verificar que la materia pertenece al docente ─────────────────────
  
-def get_materia_del_docente(
+def get_materia_del_auxiliar(
     id_materia: UUID,
-    docente_id: UUID,
+    auxiliar_id: UUID,
     db: Session,
 ) -> models.Materia:
     """
@@ -83,7 +83,7 @@ def get_materia_del_docente(
     if materia is None:
         raise HTTPException(status_code=404, detail="Materia no encontrada")
  
-    if materia.id_docente != docente_id:
+    if materia.id_auxiliar != auxiliar_id:
         raise HTTPException(
             status_code=403,
             detail="No tienes permiso sobre esta materia",
@@ -91,18 +91,16 @@ def get_materia_del_docente(
  
     return materia
  
- 
-###### Materias por docente #####
+###### Materias por auxiliar #####
  
 @router.get("/mis-materias")
 def listar_mis_materias(
-    docente_id: UUID = Depends(get_docente_id),
+    auxiliar_id: UUID = Depends(get_auxiliar_id),
     db: Session     = Depends(get_db),
 ):
     materias = db.query(models.Materia).filter(
-        models.Materia.id_docente == docente_id
+        models.Materia.id_auxiliar == auxiliar_id
     ).all()
- 
     return [
         {
             "id_materia": m.id_materia,
@@ -113,17 +111,16 @@ def listar_mis_materias(
         for m in materias
     ]
 
-
 # ── GET /parciales/{id_materia}/estudiantes 
 
 @router.get("/{id_materia}/estudiantes")
 def listar_estudiantes_inscritos(
     id_materia: UUID,
-    docente_id: UUID = Depends(get_docente_id),
+    auxiliar_id: UUID = Depends(get_auxiliar_id),
     db: Session      = Depends(get_db),
 ):
     """Devuelve todos los estudiantes inscritos en una materia del docente."""
-    get_materia_del_docente(id_materia, docente_id, db)
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
 
     inscritos = (
         db.query(models.Estudiante)
@@ -149,16 +146,15 @@ def listar_estudiantes_inscritos(
 @router.get("/{id_materia}", response_model=list[ParcialOut])
 def listar_parciales(
     id_materia: UUID,
-    docente_id: UUID    = Depends(get_docente_id),
+    auxiliar_id: UUID    = Depends(get_auxiliar_id),
     db: Session         = Depends(get_db),
 ):
     """Lista todos los parciales de una materia que pertenece al docente."""
-    get_materia_del_docente(id_materia, docente_id, db)
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
  
     parciales = db.query(models.Parcial).filter(
         models.Parcial.id_materia == id_materia
     ).all()
- 
     return parciales
  
 # ── POST /parciales/{id_materia} ──────────────────────────────────────────────
@@ -167,11 +163,11 @@ def listar_parciales(
 def crear_parcial(
     id_materia: UUID,
     body:       ParcialCreate,
-    docente_id: UUID    = Depends(get_docente_id),
+    auxiliar_id: UUID    = Depends(get_auxiliar_id),
     db: Session         = Depends(get_db),
 ):
     """Crea un nuevo parcial en una materia del docente."""
-    get_materia_del_docente(id_materia, docente_id, db)
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
  
     nuevo = models.Parcial(
         nombre_parcial = body.nombre_parcial,
@@ -191,11 +187,11 @@ def editar_parcial(
     id_materia: UUID,
     id_parcial: UUID,
     body:       ParcialUpdate,
-    docente_id: UUID    = Depends(get_docente_id),
+    auxiliar_id: UUID    = Depends(get_auxiliar_id),
     db: Session         = Depends(get_db),
 ):
     """Edita un parcial existente. Solo actualiza los campos enviados."""
-    get_materia_del_docente(id_materia, docente_id, db)
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
  
     parcial = db.query(models.Parcial).filter(
         models.Parcial.id_parcial  == id_parcial,
@@ -221,11 +217,11 @@ def editar_parcial(
 def eliminar_parcial(
     id_materia: UUID,
     id_parcial: UUID,
-    docente_id: UUID    = Depends(get_docente_id),
+    auxiliar_id: UUID    = Depends(get_auxiliar_id),
     db: Session         = Depends(get_db),
 ):
     """Elimina un parcial (y sus notas en cascada) de una materia del docente."""
-    get_materia_del_docente(id_materia, docente_id, db)
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
  
     parcial = db.query(models.Parcial).filter(
         models.Parcial.id_parcial == id_parcial,
