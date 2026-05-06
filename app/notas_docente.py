@@ -1,5 +1,6 @@
 from uuid  import UUID
 from typing import List, Optional
+import uuid
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
@@ -12,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .database import get_db
 from . import models
 
-router = APIRouter(prefix="/materias", tags=["notas"])
+router = APIRouter(prefix="/materias", tags=["notas_docente"])
 bearer = HTTPBearer()
 
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
@@ -29,12 +30,10 @@ def get_current_docente(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="El token ha expirado.")
     except InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
-
-    if payload.get("rol") != "docente":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso restringido a docentes.")
-
+    if payload.get("rol") not in ("docente", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="Acceso restringido a docentes y administradores.")
     user_id: str = payload.get("sub")
-    if not user_id:
+    if not user_id: 
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token sin identificador de usuario.")
 
     usuario = db.query(models.Usuario).filter(

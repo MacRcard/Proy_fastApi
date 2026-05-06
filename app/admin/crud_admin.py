@@ -10,7 +10,7 @@ from ..database import get_db
 from .. import models
 from .schemas_admin import (DocenteCreate, DocenteUpdate, DocenteOut,AuxiliarCreate, AuxiliarUpdate, AuxiliarOut, AsignarAuxiliarBody)
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin")
 
 TITULOS_VALIDOS = {"licenciado", "doctor", "magister"}
 
@@ -72,7 +72,40 @@ def _get_auxiliar_activo_or_404(id_auxiliar: UUID, db: Session) -> models.Auxili
 #         for d in db.query(models.Docente).all()
 #     ]
 
-@router.get("/docentes/{id_usuario}", response_model=DocenteOut)
+@router.get("/docentes/materias-parciales", tags=["Admin - Docente"])
+def get_docentes_con_materias_y_parciales(db: Session = Depends(get_db)):
+    """
+    Lista todos los docentes con sus materias,
+    y cada materia con sus parciales de tipo 'parcial'.
+    """
+    docentes = db.query(models.Docente).all()
+
+    resultado = []
+    for d in docentes:
+        materias = []
+        for m in d.materias:
+            parciales = (db.query(models.Parcial).filter(models.Parcial.id_materia == m.id_materia,
+                                                         models.Parcial.tipo == "parcial").all())
+            materias.append({
+                "id_materia":     m.id_materia,
+                "sigla":          m.sigla,
+                "nombre_materia": m.nombre_materia,
+                "horario":        m.horario,
+                "anio":           m.anio,
+                "parciales":      parciales,
+            })
+        resultado.append({
+            "id_usuario": d.id_usuario,
+            "nombre":     d.nombre_docente,
+            "apellido":   d.apellido_docente,
+            "titulo":     d.titulo,
+            "username":   d.usuario.username,
+            "materias":   materias,
+        })
+
+    return resultado
+
+@router.get("/docentes/{id_usuario}", response_model=DocenteOut, tags=["Admin - Docente"])
 def get_docente(id_usuario: UUID, db: Session = Depends(get_db)):
     """Obtiene un docente por su id_usuario."""
     d = _get_docente_or_404(id_usuario, db)
@@ -84,7 +117,7 @@ def get_docente(id_usuario: UUID, db: Session = Depends(get_db)):
         apellido   = d.apellido_docente,
     )
 
-@router.post("/docentes/", response_model=DocenteOut, status_code=201)
+@router.post("/docentes/", response_model=DocenteOut, status_code=201, tags=["Admin - Docente"])
 def create_docente(body: DocenteCreate, db: Session = Depends(get_db)):
     """Crea un usuario con rol='docente' y su registro en la tabla docente."""
     if body.titulo and body.titulo not in TITULOS_VALIDOS:
@@ -120,7 +153,7 @@ def create_docente(body: DocenteCreate, db: Session = Depends(get_db)):
         apellido   = docente.apellido_docente,
     )
 
-@router.patch("/docentes/{id_usuario}", response_model=DocenteOut)
+@router.patch("/docentes/{id_usuario}", response_model=DocenteOut, tags=["Admin - Docente"])
 def update_docente(id_usuario: UUID,body: DocenteUpdate,db: Session = Depends(get_db)):
     """Actualiza parcialmente un docente."""
     docente = _get_docente_or_404(id_usuario, db)
@@ -154,7 +187,7 @@ def update_docente(id_usuario: UUID,body: DocenteUpdate,db: Session = Depends(ge
         apellido   = docente.apellido_docente,
     )
 
-@router.delete("/docentes/{id_usuario}", status_code=204)
+@router.delete("/docentes/{id_usuario}", status_code=204, tags=["Admin - Docente"])
 def delete_docente(id_usuario: UUID, db: Session = Depends(get_db)):
     """Elimina el docente y su usuario (CASCADE en BD limpia la tabla docente)."""
     docente = _get_docente_or_404(id_usuario, db)
@@ -175,8 +208,37 @@ def delete_docente(id_usuario: UUID, db: Session = Depends(get_db)):
 #         )
 #         for a in db.query(models.Auxiliar).all()
 #     ]
+@router.get("/auxiliares/materias-parciales", tags=["Admin - Auxiliares"])
+def get_docentes_con_materias_y_parciales(db: Session = Depends(get_db)):
+    """
+    Lista todos los auxiliares con sus materias,
+    y cada materia con sus parciales de tipo 'practicas'.
+    """
+    auxiliares = db.query(models.Auxiliar).all()
 
-@router.get("/auxiliares/{id_usuario}", response_model=AuxiliarOut)
+    resultado = []
+    for d in auxiliares:
+        materias = []
+        for m in d.materias:
+            practicas = (db.query(models.Parcial).filter(models.Parcial.id_materia == m.id_materia,
+                                                         models.Parcial.tipo == "practica").all())
+            materias.append({
+                "id_materia":     m.id_materia,
+                "sigla":          m.sigla,
+                "nombre_materia": m.nombre_materia,
+                "horario":        m.horario,
+                "anio":           m.anio,
+                "practicas":      practicas,
+            })
+        resultado.append({
+            "id_usuario": d.id_usuario,
+            "nombre":     d.nombre,
+            "username":   d.usuario.username,
+            "materias":   materias,
+        })
+    return resultado
+
+@router.get("/auxiliares/{id_usuario}", response_model=AuxiliarOut, tags=["Admin - Auxiliares"])
 def get_auxiliar(id_usuario: UUID, db: Session = Depends(get_db)):
     """Obtiene un auxiliar por su id_usuario."""
     a = _get_auxiliar_or_404(id_usuario, db)
@@ -187,8 +249,8 @@ def get_auxiliar(id_usuario: UUID, db: Session = Depends(get_db)):
         email      = a.email,
         activo     = a.activo,
     )
-
-@router.post("/auxiliares/", response_model=AuxiliarOut, status_code=201)
+# corrergir
+@router.post("/auxiliares/", response_model=AuxiliarOut, status_code=201, tags=["Admin - Auxiliares"])
 def create_auxiliar(body: AuxiliarCreate, db: Session = Depends(get_db)):
     """
     Crea un usuario con rol='auxiliar' y su registro en la tabla auxiliar.
@@ -225,7 +287,7 @@ def create_auxiliar(body: AuxiliarCreate, db: Session = Depends(get_db)):
         activo     = auxiliar.activo,
     )
 
-@router.patch("/auxiliares/{id_usuario}", response_model=AuxiliarOut)
+@router.patch("/auxiliares/{id_usuario}", response_model=AuxiliarOut, tags=["Admin - Auxiliares"])
 def update_auxiliar(
     id_usuario: UUID,
     body: AuxiliarUpdate,
@@ -243,10 +305,9 @@ def update_auxiliar(
 
     if body.activo is not None:
         auxiliar.activo = body.activo
-
-    if body.username is not None:
-        _username_libre(body.username, db, excluir_id=id_usuario)
-        auxiliar.usuario.username = body.username
+    # if body.username is not None:
+    #     _username_libre(body.username, db, excluir_id=id_usuario)
+    #     auxiliar.usuario.username = body.username
     if body.password is not None:
         auxiliar.usuario.password = _hash(body.password)
 
@@ -261,40 +322,40 @@ def update_auxiliar(
         activo     = auxiliar.activo,
     )
  
-@router.delete("/auxiliares/{id_usuario}", status_code=204)
+@router.delete("/auxiliares/{id_usuario}", status_code=204, tags=["Admin - Auxiliares"])
 def delete_auxiliar(id_usuario: UUID, db: Session = Depends(get_db)):
     """Elimina el auxiliar y su usuario (CASCADE en BD limpia la tabla auxiliar)."""
     auxiliar = _get_auxiliar_or_404(id_usuario, db)
     db.delete(auxiliar.usuario)
     db.commit()
 
-@router.patch("/materias/{id_materia}/auxiliar", tags=["Admin"])
-def asignar_auxiliar(
-    id_materia: UUID,
-    body: AsignarAuxiliarBody,
-    db: Session = Depends(get_db),
-):
-    """
-    Asigna un auxiliar a una materia.
-    - Pasa None en id_auxiliar para desasignar.
-    - Valida que el auxiliar exista y esté activo.
-    """
-    materia = _get_materia_or_404(id_materia, db)
-    _get_auxiliar_activo_or_404(body.id_auxiliar, db)
+# @router.patch("/materias/{id_materia}/auxiliar", tags=["Admin"])
+# def asignar_auxiliar(
+#     id_materia: UUID,
+#     body: AsignarAuxiliarBody,
+#     db: Session = Depends(get_db),
+# ):
+#     """
+#     Asigna un auxiliar a una materia.
+#     - Pasa None en id_auxiliar para desasignar.
+#     - Valida que el auxiliar exista y esté activo.
+#     """
+#     materia = _get_materia_or_404(id_materia, db)
+#     _get_auxiliar_activo_or_404(body.id_auxiliar, db)
 
-    materia.id_auxiliar = body.id_auxiliar
-    db.commit()
-    db.refresh(materia)
+#     materia.id_auxiliar = body.id_auxiliar
+#     db.commit()
+#     db.refresh(materia)
 
-    return {
-        "id_materia":  materia.id_materia,
-        "sigla":       materia.sigla,
-        "id_auxiliar": materia.id_auxiliar,
-        "auxiliar":    materia.auxiliar.nombre if materia.auxiliar else None,
-    }
+#     return {
+#         "id_materia":  materia.id_materia,
+#         "sigla":       materia.sigla,
+#         "id_auxiliar": materia.id_auxiliar,
+#         "auxiliar":    materia.auxiliar.nombre if materia.auxiliar else None,
+#     }
 
-@router.delete("/materias/{id_materia}/auxiliar", status_code=204, tags=["Admin"])
-def desasignar_auxiliar(id_materia: UUID, db: Session = Depends(get_db)):
+# @router.delete("/materias/{id_materia}/auxiliar", status_code=204, tags=["Admin"])
+# def desasignar_auxiliar(id_materia: UUID, db: Session = Depends(get_db)):
     """Quita el auxiliar asignado a una materia."""
     materia = _get_materia_or_404(id_materia, db)
     materia.id_auxiliar = None

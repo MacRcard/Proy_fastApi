@@ -3,47 +3,15 @@
 
 # import bcrypt
 # from fastapi import APIRouter, Depends, HTTPException
-# from pydantic import BaseModel, EmailStr
+# # from pydantic import BaseModel, EmailStr
 # from sqlalchemy.orm import Session
+
+# from app.admin.schemas_admin import (AuxiliarCreate, AuxiliarOut, AuxiliarUpdate)
 
 # from ..database import get_db
 # from .. import models
 
 # router = APIRouter(prefix="/auxiliares", tags=["Auxiliar"])
-
-
-# # ── Schemas ───────────────────────────────────────────────────────────────────
-
-# class AuxiliarBase(BaseModel):
-#     nombre: str
-#     email: EmailStr
-#     activo: bool = True
-
-
-# class AuxiliarCreate(AuxiliarBase):
-#     """
-#     Para crear un auxiliar se necesita también crear su usuario.
-#     El id_usuario debe corresponder a un usuario existente con rol='auxiliar'.
-#     """
-#     id_usuario: UUID
-#     username: str
-#     password: str          # se hashea antes de guardar
-
-
-# class AuxiliarUpdate(BaseModel):
-#     """Todos los campos son opcionales (PATCH parcial)."""
-#     nombre:   Optional[str]   = None
-#     email:    Optional[EmailStr] = None
-#     activo:   Optional[bool]  = None
-#     password: Optional[str]   = None   # si se envía, se re-hashea
-
-
-# class AuxiliarOut(AuxiliarBase):
-#     id_usuario: UUID
-#     username:   str
-
-#     class Config:
-#         from_attributes = True
 
 
 # # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -112,7 +80,6 @@
 
 #     # 1. Crear usuario con rol='auxiliar'
 #     nuevo_usuario = models.Usuario(
-#         id_usuario = body.id_usuario,
 #         rol        = "auxiliar",
 #         username   = body.username,
 #         password   = _hash(body.password),
@@ -122,7 +89,6 @@
 
 #     # 2. Crear auxiliar (el trigger check_auxiliar_role valida el rol)
 #     nuevo_auxiliar = models.Auxiliar(
-#         id_usuario = body.id_usuario,
 #         nombre     = body.nombre,
 #         email      = body.email,
 #         activo     = body.activo,

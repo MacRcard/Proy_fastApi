@@ -74,10 +74,11 @@ class Materia(Base):
     sigla       = Column(String(20), nullable=False)
     horario     = Column(String(50), nullable=True)
     anio        = Column(Integer, nullable=True)
-    id_docente  = Column(UUID(as_uuid=True), ForeignKey("docente.id_usuario"),              nullable=True)
+    id_docente  = Column(UUID(as_uuid=True), ForeignKey("docente.id_usuario", ondelete="SET NULL"), nullable=True)
     id_auxiliar = Column(UUID(as_uuid=True), ForeignKey("auxiliar.id_usuario", ondelete="SET NULL"), nullable=True)
+    nombre_materia = Column(String(50), nullable=False)
 
-    docente       = relationship("Docente",  back_populates="materias")
+    docente       = relationship("Docente",  back_populates="materias", foreign_keys=[id_docente])
     auxiliar      = relationship("Auxiliar", back_populates="materias", foreign_keys=[id_auxiliar])
     inscripciones = relationship("Inscrito", back_populates="materia",  cascade="all, delete-orphan")
     parciales     = relationship("Parcial",  back_populates="materia",  cascade="all, delete-orphan")
@@ -105,7 +106,8 @@ class Parcial(Base):
     fecha          = Column(Date, nullable=True)
     valoracion     = Column(Integer, nullable=True)
     id_materia     = Column(UUID(as_uuid=True), ForeignKey("materia.id_materia", ondelete="CASCADE"), nullable=True)
-
+    tipo           = Column(String(50), nullable=True, default="docente")
+    
     materia = relationship("Materia", back_populates="parciales")
     notas   = relationship("Nota",    back_populates="parcial", cascade="all, delete-orphan")
 
@@ -123,3 +125,11 @@ class Nota(Base):
 
     estudiante = relationship("Estudiante", back_populates="notas")
     parcial    = relationship("Parcial",    back_populates="notas")
+
+# MENCION
+class Mencion(Base):
+    __tablename__ = "mencion"
+
+    id_mencion  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nombre      = Column(String(100), nullable=False, default="")
+    jefe        = Column(String(100), nullable=False, default="")
