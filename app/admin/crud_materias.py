@@ -20,6 +20,7 @@ def _build_out(m: models.Materia) -> MateriaOut:
         nombre_materia=m.nombre_materia,
         horario     = m.horario,
         anio        = m.anio,
+        mencion     = m.mencion,
         docente     = DocenteResumen(
             id_usuario = m.docente.id_usuario,
             nombre     = m.docente.nombre_docente,

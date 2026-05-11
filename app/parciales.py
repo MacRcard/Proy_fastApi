@@ -144,6 +144,27 @@ def listar_estudiantes_inscritos(
         for e in inscritos
     ]
 
+@router.get("/{id_materia}/notas-resumen")
+def notas_resumen(
+    id_materia: UUID,
+    docente_id: UUID = Depends(get_docente_id),
+    db: Session      = Depends(get_db),
+):
+    get_materia_del_docente(id_materia, docente_id, db)
+    # { id_estudiante: { id_parcial: nota } }
+    notas = (
+        db.query(models.Nota)
+        .join(models.Parcial, models.Parcial.id_parcial == models.Nota.id_parcial)
+        .filter(models.Parcial.id_materia == id_materia)
+        .all()
+    )
+    resultado = {}
+    for n in notas:
+        eid = str(n.id_estudiante)
+        if eid not in resultado:
+            resultado[eid] = {}
+        resultado[eid][str(n.id_parcial)] = float(n.nota) if n.nota is not None else None
+    return resultado
 # ── GET /parciales/{id_materia} ───────────────────────────────────────────────
  
 @router.get("/{id_materia}", response_model=list[ParcialOut])
@@ -156,9 +177,10 @@ def listar_parciales(
     get_materia_del_docente(id_materia, docente_id, db)
  
     parciales = db.query(models.Parcial).filter(
-        models.Parcial.id_materia == id_materia
+        models.Parcial.id_materia == id_materia,
+        models.Parcial.tipo       == "parcial",   # docentes solo ven/gestionan tipo 'parcial'
     ).all()
- 
+
     return parciales
  
 # ── POST /parciales/{id_materia} ──────────────────────────────────────────────
@@ -178,6 +200,7 @@ def crear_parcial(
         fecha          = body.fecha,
         valoracion     = body.valoracion,
         id_materia     = id_materia,
+        tipo           = "parcial",   # docentes solo crean tipo 'parcial'
     )
     db.add(nuevo)
     db.commit()

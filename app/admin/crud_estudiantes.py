@@ -1,9 +1,16 @@
+from datetime import date
 import uuid
 from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
+ALGORITHM  = "HS256"
+bearer  = HTTPBearer()
+import jwt
 from sqlalchemy.orm import Session, joinedload
 from .schemas_admin import (EstudianteCreate, EstudianteOut, EstudianteUpdate)
+from .schemas_notas import (PerfilEstudianteCompletoOut, NotaDetalleOut, ParcialConNotaOut, MateriaConEvaluacionesOut)
 
 from ..database import get_db
 from .. import models
@@ -26,10 +33,9 @@ def get_estudiantes(
       - ?apellido=mendoza
       - ?mencion=laboratorio&anio=2
     """
-    men = db.query(models.Mencion.id_mencion).filter(models.Mencion.nombre == mencion)
     q = db.query(models.Estudiante)
     if mencion:
-        q = q.filter(models.Estudiante.mencion == men)
+        q = q.filter(models.Estudiante.mencion.ilike(f"%{mencion}%"))
     if anio:
         q = q.filter(models.Estudiante.anio == anio)
     if nombre:
@@ -82,6 +88,79 @@ def get_estudiantes(
             "materias":      materias,
         })
     return resultado
+
+@router.get("/estudiantes/{id_estudiante}/kardex", response_model=PerfilEstudianteCompletoOut)
+def obtener_perfil_estudiante_detallado(id_estudiante: UUID, db: Session = Depends(get_db)):
+    # 1. Buscar al estudiante
+    estudiante = db.query(models.Estudiante).filter(models.Estudiante.id_estudiante == id_estudiante).first()
+    if not estudiante:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    # 2. Construir la lista de materias e información académica
+    materias_resumen = []
+    # Recorremos las inscripciones del estudiante
+    for inscripcion in estudiante.inscripciones:
+        materia = inscripcion.materia
+        lista_parciales_con_nota = []
+
+        # Recorremos cada parcial de la materia
+        for parcial in materia.parciales:
+            # Buscamos la nota específica de este estudiante para este parcial específico
+            nota_db = db.query(models.Nota).filter(
+                models.Nota.id_estudiante == id_estudiante,
+                models.Nota.id_parcial == parcial.id_parcial
+            ).first()
+
+            nota_info = None
+            if nota_db:
+                nota_info = NotaDetalleOut(
+                    nota=float(nota_db.nota) if nota_db.nota is not None else None,
+                    observacion=nota_db.observacion
+                )
+
+            lista_parciales_con_nota.append(ParcialConNotaOut(
+                id_parcial=parcial.id_parcial,
+                nombre_parcial=parcial.nombre_parcial,
+                fecha=parcial.fecha,
+                tipo=parcial.tipo,
+                valoracion=parcial.valoracion,
+                nota_detalle=nota_info
+            ))
+
+        materias_resumen.append(MateriaConEvaluacionesOut(
+            id_materia=materia.id_materia,
+            sigla=materia.sigla,
+            nombre_materia=materia.nombre_materia,
+            parciales=lista_parciales_con_nota
+        ))
+
+    # 3. Retornar el objeto completo
+    return PerfilEstudianteCompletoOut(
+        id_estudiante=estudiante.id_estudiante,
+        nombre=estudiante.nombre,
+        apellido=estudiante.apellido,
+        matricula=estudiante.matricula,
+        mencion=estudiante.mencion,
+        materias=materias_resumen
+    )
+
+@router.get("/acceder", response_model=PerfilEstudianteCompletoOut)
+def acceder_portal_estudiante(ci: int, matricula: int, db: Session = Depends(get_db)):
+    # 1. Verificar credenciales
+    estudiante = db.query(models.Estudiante).filter(
+        models.Estudiante.ci_estudiante == ci,
+        models.Estudiante.matricula == matricula
+    ).first()
+
+    if not estudiante:
+        raise HTTPException(
+            status_code=404, 
+            detail="Credenciales incorrectas. Verifica tu CI y Matrícula."
+        )
+
+    # 2. Reutilizar la lógica del Kardex para devolver todo el objeto
+    # (Aquí llamarías a la misma lógica de construcción de JSON del mensaje anterior)
+    # ... 
+    return obtener_perfil_estudiante_detallado(estudiante.id_estudiante, db)
 
 @router.post("/", response_model=EstudianteOut, status_code=status.HTTP_201_CREATED)
 def crear_estudiante(obj_in: EstudianteCreate, db: Session = Depends(get_db)):
@@ -205,8 +284,28 @@ def update_nota(
     nota:          float | None = None,
     observacion:   str   | None = None,
     db:            Session = Depends(get_db),
+    credentials:   HTTPAuthorizationCredentials = Depends(bearer),
 ):
-    """Modifica la nota y/u observación de un estudiante en un parcial."""
+    # Decodificar token y obtener rol
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido")
+    
+    rol = payload.get("rol")
+
+    # Verificar límite de 10 días si no es admin
+    if rol != "admin":
+        parcial = db.query(models.Parcial).filter(
+            models.Parcial.id_parcial == id_parcial
+        ).first()
+        if parcial and parcial.fecha:
+            if (date.today() - parcial.fecha).days > 10:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Han pasado más de 10 días desde el parcial, no puedes modificar esta nota"
+                )
+
     registro = (
         db.query(models.Nota)
         .filter(
@@ -237,7 +336,6 @@ def update_nota(
         "observacion":         registro.observacion,
         "ultima_modificacion": registro.ultima_modificacion,
     }
-
 
 # ── POST /inscripciones/ ──────────────────────────────────────────────────────    
 @router.post("/inscripciones/", tags=["Admin - Estudiantes"], status_code=201)

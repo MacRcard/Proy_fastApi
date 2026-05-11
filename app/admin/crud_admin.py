@@ -356,7 +356,7 @@ def delete_auxiliar(id_usuario: UUID, db: Session = Depends(get_db)):
 
 # @router.delete("/materias/{id_materia}/auxiliar", status_code=204, tags=["Admin"])
 # def desasignar_auxiliar(id_materia: UUID, db: Session = Depends(get_db)):
-    """Quita el auxiliar asignado a una materia."""
-    materia = _get_materia_or_404(id_materia, db)
-    materia.id_auxiliar = None
-    db.commit()
+    # """Quita el auxiliar asignado a una materia."""
+    # materia = _get_materia_or_404(id_materia, db)
+    # materia.id_auxiliar = None
+    # db.commit()

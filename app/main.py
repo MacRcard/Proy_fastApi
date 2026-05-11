@@ -18,6 +18,7 @@ from .inscritos import router as inscritos_router
 from .admin.crud_admin import router as admin_router
 from .admin.crud_materias import router as materias_router
 from .admin.crud_estudiantes import router as estudiantes_router
+from .admin.pacriales_notas import router as notas_router
 
 from .database import engine, get_db
 from . import models
@@ -46,6 +47,7 @@ app.include_router(inscritos_router)
 app.include_router(admin_router)
 app.include_router(materias_router)
 app.include_router(estudiantes_router)
+app.include_router(notas_router)
 
 # nuevo admin
 class AdminCreate(BaseModel):

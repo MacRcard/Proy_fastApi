@@ -14,6 +14,18 @@ from .database import get_db
 from . import models
  
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
+
+
+def _nombre_mencion(mencion_uuid, db) -> str | None:
+    if not mencion_uuid:
+        return None
+    try:
+        from uuid import UUID as _UUID
+        uid = _UUID(str(mencion_uuid))
+    except ValueError:
+        return str(mencion_uuid)
+    obj = db.query(models.Mencion).filter(models.Mencion.id_mencion == uid).first()
+    return obj.nombre if obj else str(mencion_uuid)
 ALGORITHM  = "HS256"
  
 router  = APIRouter(prefix="/practicas", tags=["Practicas"])
@@ -111,6 +123,27 @@ def listar_mis_materias(
         for m in materias
     ]
 
+@router.get("/{id_materia}/notas-resumen")
+def notas_resumen(
+    id_materia: UUID,
+    docente_id: UUID = Depends(get_auxiliar_id),
+    db: Session      = Depends(get_db),
+):
+    get_materia_del_auxiliar(id_materia, docente_id, db)
+    # { id_estudiante: { id_parcial: nota } }
+    notas = (
+        db.query(models.Nota)
+        .join(models.Parcial, models.Parcial.id_parcial == models.Nota.id_parcial)
+        .filter(models.Parcial.id_materia == id_materia)
+        .all()
+    )
+    resultado = {}
+    for n in notas:
+        eid = str(n.id_estudiante)
+        if eid not in resultado:
+            resultado[eid] = {}
+        resultado[eid][str(n.id_parcial)] = float(n.nota) if n.nota is not None else None
+    return resultado
 # ── GET /parciales/{id_materia}/estudiantes 
 
 @router.get("/{id_materia}/estudiantes")
@@ -136,10 +169,36 @@ def listar_estudiantes_inscritos(
             "nombre":        e.nombre,
             "apellido":      e.apellido,
             "anio":          e.anio,
-            "mencion":       e.mencion,
+            "mencion":       _nombre_mencion(e.mencion, db),
         }
         for e in inscritos
     ]
+
+@router.get("/{id_materia}/notas-resumen")
+def notas_resumen(
+    id_materia:  UUID,
+    auxiliar_id: UUID    = Depends(get_auxiliar_id),
+    db:          Session = Depends(get_db),
+):
+    """Mapa { id_estudiante: { id_parcial: nota } } para prácticas de la materia."""
+    get_materia_del_auxiliar(id_materia, auxiliar_id, db)
+    notas = (
+        db.query(models.Nota)
+        .join(models.Parcial, models.Parcial.id_parcial == models.Nota.id_parcial)
+        .filter(
+            models.Parcial.id_materia == id_materia,
+            models.Parcial.tipo       == "practica",
+        )
+        .all()
+    )
+    resultado = {}
+    for n in notas:
+        eid = str(n.id_estudiante)
+        if eid not in resultado:
+            resultado[eid] = {}
+        resultado[eid][str(n.id_parcial)] = float(n.nota) if n.nota is not None else None
+    return resultado
+
 
 # ── GET /parciales/{id_materia} ───────────────────────────────────────────────
  
@@ -153,7 +212,8 @@ def listar_parciales(
     get_materia_del_auxiliar(id_materia, auxiliar_id, db)
  
     parciales = db.query(models.Parcial).filter(
-        models.Parcial.id_materia == id_materia
+        models.Parcial.id_materia == id_materia,
+        models.Parcial.tipo       == "practica",
     ).all()
     return parciales
  
@@ -174,6 +234,7 @@ def crear_parcial(
         fecha          = body.fecha,
         valoracion     = body.valoracion,
         id_materia     = id_materia,
+        tipo           = "practica",   # auxiliares solo crean prácticas
     )
     db.add(nuevo)
     db.commit()
@@ -197,10 +258,20 @@ def editar_parcial(
         models.Parcial.id_parcial  == id_parcial,
         models.Parcial.id_materia  == id_materia,
     ).first()
- 
+
     if parcial is None:
-        raise HTTPException(status_code=404, detail="Parcial no encontrado")
- 
+        raise HTTPException(status_code=404, detail="Práctica no encontrada")
+
+    # Restricción 10 días para auxiliares
+    if parcial.fecha:
+        from datetime import date as _date
+        dias = (_date.today() - parcial.fecha).days
+        if dias > 10:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Solo se pueden editar prácticas dentro de los 10 días siguientes. Han pasado {dias} días.",
+            )
+
     # Actualiza solo los campos que vienen en el body (partial update)
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():

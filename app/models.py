@@ -15,7 +15,6 @@ class Usuario(Base):
     username   = Column(String(100), nullable=False, unique=True)
     password   = Column(String(100), nullable=False)
 
-    # relaciones uno-a-uno
     docente  = relationship("Docente",  back_populates="usuario", uselist=False, cascade="all, delete-orphan")
     auxiliar = relationship("Auxiliar", back_populates="usuario", uselist=False, cascade="all, delete-orphan")
 
@@ -26,12 +25,12 @@ class Docente(Base):
     __tablename__ = "docente"
 
     id_usuario       = Column(UUID(as_uuid=True), ForeignKey("usuario.id_usuario", ondelete="CASCADE"), primary_key=True)
-    titulo           = Column(String(20), nullable=True)   # 'licenciado' | 'doctor' | 'magister'
+    titulo           = Column(String(20), nullable=True)
     nombre_docente   = Column(String(100), nullable=False)
     apellido_docente = Column(String(100), nullable=False)
 
-    usuario  = relationship("Usuario",  back_populates="docente")
-    materias = relationship("Materia",  back_populates="docente")
+    usuario  = relationship("Usuario", back_populates="docente")
+    materias = relationship("Materia", back_populates="docente")
 
 
 # ── AUXILIAR ──────────────────────────────────────────────────────────────────
@@ -59,7 +58,7 @@ class Estudiante(Base):
     nombre        = Column(String(100), nullable=False)
     apellido      = Column(String(100), nullable=False)
     anio          = Column(Integer, nullable=True)
-    mencion       = Column(String(100), nullable=True)
+    mencion       = Column(String(100), nullable=True)  # nombre directo, no FK
 
     inscripciones = relationship("Inscrito", back_populates="estudiante", cascade="all, delete-orphan")
     notas         = relationship("Nota",     back_populates="estudiante", cascade="all, delete-orphan")
@@ -70,13 +69,14 @@ class Estudiante(Base):
 class Materia(Base):
     __tablename__ = "materia"
 
-    id_materia  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    sigla       = Column(String(20), nullable=False)
-    horario     = Column(String(50), nullable=True)
-    anio        = Column(Integer, nullable=True)
-    id_docente  = Column(UUID(as_uuid=True), ForeignKey("docente.id_usuario", ondelete="SET NULL"), nullable=True)
-    id_auxiliar = Column(UUID(as_uuid=True), ForeignKey("auxiliar.id_usuario", ondelete="SET NULL"), nullable=True)
-    nombre_materia = Column(String(50), nullable=False)
+    id_materia     = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sigla          = Column(String(20), nullable=False)
+    nombre_materia = Column(String(100), nullable=False, default="")
+    horario        = Column(String(50), nullable=True)
+    anio           = Column(Integer, nullable=True)
+    mencion        = Column(String(100), nullable=True)  # mención a la que pertenece la materia
+    id_docente     = Column(UUID(as_uuid=True), ForeignKey("docente.id_usuario",  ondelete="SET NULL"), nullable=True)
+    id_auxiliar    = Column(UUID(as_uuid=True), ForeignKey("auxiliar.id_usuario", ondelete="SET NULL"), nullable=True)
 
     docente       = relationship("Docente",  back_populates="materias", foreign_keys=[id_docente])
     auxiliar      = relationship("Auxiliar", back_populates="materias", foreign_keys=[id_auxiliar])
@@ -106,8 +106,8 @@ class Parcial(Base):
     fecha          = Column(Date, nullable=True)
     valoracion     = Column(Integer, nullable=True)
     id_materia     = Column(UUID(as_uuid=True), ForeignKey("materia.id_materia", ondelete="CASCADE"), nullable=True)
-    tipo           = Column(String(50), nullable=True, default="docente")
-    
+    tipo           = Column(String(50), nullable=True, default="parcial")
+
     materia = relationship("Materia", back_populates="parciales")
     notas   = relationship("Nota",    back_populates="parcial", cascade="all, delete-orphan")
 
@@ -125,11 +125,3 @@ class Nota(Base):
 
     estudiante = relationship("Estudiante", back_populates="notas")
     parcial    = relationship("Parcial",    back_populates="notas")
-
-# MENCION
-class Mencion(Base):
-    __tablename__ = "mencion"
-
-    id_mencion  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    nombre      = Column(String(100), nullable=False, default="")
-    jefe        = Column(String(100), nullable=False, default="")
