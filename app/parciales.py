@@ -145,7 +145,7 @@ def listar_estudiantes_inscritos(
     ]
 
 @router.get("/{id_materia}/notas-resumen")
-def notas_resumen(
+def notas_resumen_parciales(
     id_materia: UUID,
     docente_id: UUID = Depends(get_docente_id),
     db: Session      = Depends(get_db),

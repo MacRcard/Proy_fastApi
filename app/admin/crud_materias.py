@@ -69,15 +69,6 @@ def _validar_auxiliar(id_auxiliar: UUID, db: Session) -> None:
     if not obj.activo:
         raise HTTPException(status_code=403, detail="El auxiliar esta inactivo")
 
-# def _validar_gestion(id_gestion: UUID, db: Session) -> None:
-#     """Valida que la gestion exista. Ajusta el modelo si tu Gestion tiene otro nombre."""
-#     if not hasattr(models, "Gestion"):
-#         return  # si aun no esta en models.py, se omite la validacion
-#     existe = db.query(models.Gestion).filter(
-#         models.Gestion.id_gestion == id_gestion
-#     ).first()
-#     if not existe:
-#         raise HTTPException(status_code=404, detail="Gestion no encontrada")
 # ----Crud materias------------------
 @router.get("/", response_model=List[MateriaOut])
 def list_materias(
@@ -120,6 +111,7 @@ def create_materia(body: MateriaCreate, db: Session = Depends(get_db)):
         id_docente  = body.id_docente,
         id_auxiliar = body.id_auxiliar,
         nombre_materia = body.nombre_materia,
+        mencion        = body.mencion,   
     )
     # id_gestion solo si el modelo ya lo tiene
     # if hasattr(nueva, "id_gestion"):
@@ -157,6 +149,8 @@ def update_materia(
         materia.horario = body.horario
     if body.anio is not None:
         materia.anio = body.anio
+    if body.mencion is not None:
+        materia.mencion = body.mencion
     db.commit()
     db.refresh(materia)
     return _build_out(materia)
@@ -214,3 +208,39 @@ def delete_materia(id_materia: UUID, db: Session = Depends(get_db)):
     materia = _get_materia_or_404(id_materia, db)
     db.delete(materia)
     db.commit()
+
+@router.get("/{id_materia}/inscritos")
+def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
+    """Lista todos los estudiantes inscritos en una materia."""
+    materia = _get_materia_or_404(id_materia, db)
+    
+    return [
+        {
+            "id_estudiante": str(i.estudiante.id_estudiante),
+            "ci_estudiante": i.estudiante.ci_estudiante,
+            "matricula":     i.estudiante.matricula,
+            "nombre":        i.estudiante.nombre,
+            "apellido":      i.estudiante.apellido,
+            "anio":          i.estudiante.anio,
+            "mencion":       i.estudiante.mencion,
+        }
+        for i in materia.inscripciones
+    ]
+
+@router.get("/{id_materia}/parciales")
+def listar_parciales_materia(id_materia: UUID, db: Session = Depends(get_db)):
+    """Lista todos los parciales de una materia (parciales + prácticas)."""
+    parciales = db.query(models.Parcial).filter(
+        models.Parcial.id_materia == id_materia
+    ).all()
+    return [
+        {
+            "id_parcial":     str(p.id_parcial),
+            "nombre_parcial": p.nombre_parcial,
+            "valoracion":     p.valoracion,
+            "tipo":           p.tipo,
+            "fecha":          str(p.fecha) if p.fecha else None,
+        }
+        for p in parciales
+    ]
+    

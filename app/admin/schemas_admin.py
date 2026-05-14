@@ -104,6 +104,7 @@ class MateriaCreate(BaseModel):
     id_docente:  Optional[UUID] = None
     id_auxiliar: Optional[UUID] = None
     nombre_materia: str
+    mencion:        Optional[str]  = None
 
 
 class MateriaUpdate(BaseModel):
@@ -113,6 +114,7 @@ class MateriaUpdate(BaseModel):
     id_docente:  Optional[UUID] = None
     id_auxiliar: Optional[UUID] = None
     nombre_materia:Optional[str]= None
+    mencion:        Optional[str]  = None
 
 # para asignar docente y auxiliar
 class DocenteResumen(BaseModel):
@@ -131,6 +133,7 @@ class MateriaOut(BaseModel):
     nombre_materia: str
     horario:     Optional[str]
     anio:        Optional[int]
+    mencion:        Optional[str]
     docente:     Optional[DocenteResumen]
     auxiliar:    Optional[AuxiliarResumen]
     parciales:   List[ParcialResumen]
@@ -152,7 +155,7 @@ class EstudianteBase(BaseModel):
     nombre:         str
     apellido:       str
     anio:           int
-    mencion:     UUID
+    mencion:        str
 
 class EstudianteCreate(BaseModel):
     ci_estudiante: int
@@ -160,7 +163,7 @@ class EstudianteCreate(BaseModel):
     nombre:        str
     apellido:      str
     anio:          Optional[int] = None
-    mencion:       Optional[UUID] = None
+    mencion:       Optional[str] = None
 
     @field_validator("nombre", "apellido")
     @classmethod
@@ -183,7 +186,7 @@ class EstudianteUpdate(BaseModel):
     nombre:        Optional[str]  = None
     apellido:      Optional[str]  = None
     anio:          Optional[int]  = None
-    mencion:       Optional[UUID]  = None
+    mencion:       Optional[str]  = None
 
     @field_validator("nombre", "apellido", mode="before")
     @classmethod
@@ -207,6 +210,6 @@ class EstudianteOut(BaseModel):
     nombre:        str
     apellido:      str
     anio:          Optional[int]
-    mencion:       Optional[UUID]
+    mencion:       Optional[str]
 
     model_config = {"from_attributes": True}

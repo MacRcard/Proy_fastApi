@@ -124,7 +124,7 @@ def listar_mis_materias(
     ]
 
 @router.get("/{id_materia}/notas-resumen")
-def notas_resumen(
+def notas_resumen_practicas(
     id_materia: UUID,
     docente_id: UUID = Depends(get_auxiliar_id),
     db: Session      = Depends(get_db),

@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 
-from ..database import get_db
-from .. import models
+from .database import get_db
+from . import models
 
-from .schemas_notas import (ParcialCreate, ParcialUpdate, NotaUpdate)
+from .admin.crud_admin import (ParcialCreate, ParcialUpdate, NotaUpdate)
 
 router = APIRouter(prefix="/notas", tags=["Parciales y Notas"])
 

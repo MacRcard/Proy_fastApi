@@ -58,19 +58,19 @@ def _get_auxiliar_activo_or_404(id_auxiliar: UUID, db: Session) -> models.Auxili
     return obj
 
 # CRUD — DOCENTE
-# @router.get("/docentes/", response_model=List[DocenteOut])
-# def list_docentes(db: Session = Depends(get_db)):
-#     """Lista todos los docentes."""
-#     return [
-#         DocenteOut(
-#             id_usuario = d.id_usuario,
-#             username   = d.usuario.username,
-#             titulo     = d.titulo,
-#             nombre     = d.nombre_docente,
-#             apellido   = d.apellido_docente,
-#         )
-#         for d in db.query(models.Docente).all()
-#     ]
+@router.get("/docentes/", response_model=List[DocenteOut])
+def list_docentes(db: Session = Depends(get_db)):
+    """Lista todos los docentes."""
+    return [
+        DocenteOut(
+            id_usuario = d.id_usuario,
+            username   = d.usuario.username,
+            titulo     = d.titulo,
+            nombre     = d.nombre_docente,
+            apellido   = d.apellido_docente,
+        )
+        for d in db.query(models.Docente).all()
+    ]
 
 @router.get("/docentes/materias-parciales", tags=["Admin - Docente"])
 def get_docentes_con_materias_y_parciales(db: Session = Depends(get_db)):
@@ -195,19 +195,20 @@ def delete_docente(id_usuario: UUID, db: Session = Depends(get_db)):
     db.commit()
 
 # CRUD — AUXILIAR
-# @router.get("/auxiliares/", response_model=List[AuxiliarOut])
-# def list_auxiliares(db: Session = Depends(get_db)):
-#     """Lista todos los auxiliares."""
-#     return [
-#         AuxiliarOut(
-#             id_usuario = a.id_usuario,
-#             username   = a.usuario.username,
-#             nombre     = a.nombre,
-#             email      = a.email,
-#             activo     = a.activo,
-#         )
-#         for a in db.query(models.Auxiliar).all()
-#     ]
+@router.get("/auxiliares/", response_model=List[AuxiliarOut])
+def list_auxiliares(db: Session = Depends(get_db)):
+    """Lista todos los auxiliares."""
+    return [
+        AuxiliarOut(
+            id_usuario = a.id_usuario,
+            username   = a.usuario.username,
+            nombre     = a.nombre,
+            email      = a.email,
+            activo     = a.activo,
+        )
+        for a in db.query(models.Auxiliar).all()
+    ]
+
 @router.get("/auxiliares/materias-parciales", tags=["Admin - Auxiliares"])
 def get_docentes_con_materias_y_parciales(db: Session = Depends(get_db)):
     """

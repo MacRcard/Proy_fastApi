@@ -125,3 +125,16 @@ class Nota(Base):
 
     estudiante = relationship("Estudiante", back_populates="notas")
     parcial    = relationship("Parcial",    back_populates="notas")
+
+class MateriaExcel(Base):
+    __tablename__ = "materia_excel"
+
+    id_materia      = Column(UUID(as_uuid=True), ForeignKey("materia.id_materia", ondelete="CASCADE"), primary_key=True)
+    nombre_archivo  = Column(String(255), nullable=False)
+    columna_nombre  = Column(String(100), nullable=False, default="nombre")
+    columna_ci      = Column(String(100), nullable=False, default="ci")
+    columna_ru      = Column(String(100), nullable=False, default="ru")
+    subido_en       = Column(TIMESTAMP, server_default=func.current_timestamp())
+    actualizado_en  = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    materia = relationship("Materia", backref="excel_info")

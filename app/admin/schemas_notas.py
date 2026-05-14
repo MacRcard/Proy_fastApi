@@ -82,7 +82,7 @@ class PerfilEstudianteCompletoOut(BaseModel):
     nombre: str
     apellido: str
     matricula: int
-    mencion: Optional[UUID]
+    mencion: Optional[str]
     materias: List[MateriaConEvaluacionesOut]
 
     class Config:

@@ -16,6 +16,18 @@ from ..database import get_db
 from .. import models
 router = APIRouter(prefix="/admin/estudiantes", tags=["Admin - Estudiantes"])
 
+def _nombre_mencion(mencion_uuid, db) -> str | None:
+    """Resuelve UUID de mención → nombre. Devuelve None si es None."""
+    if not mencion_uuid:
+        return None
+    try:
+        from uuid import UUID as _UUID
+        uid = _UUID(str(mencion_uuid))
+    except ValueError:
+        return str(mencion_uuid)   # ya es texto, raro pero seguro
+    obj = db.query(models.Mencion).filter(models.Mencion.id_mencion == uid).first()
+    return obj.nombre if obj else str(mencion_uuid)
+
 @router.get("/Estudiantes-filter/")
 def get_estudiantes(
     mencion:  Optional[str] = None,
@@ -35,6 +47,7 @@ def get_estudiantes(
     """
     q = db.query(models.Estudiante)
     if mencion:
+        # estudiante.mencion es texto directo (ej: 'fisioterapia'), no UUID
         q = q.filter(models.Estudiante.mencion.ilike(f"%{mencion}%"))
     if anio:
         q = q.filter(models.Estudiante.anio == anio)
@@ -84,12 +97,12 @@ def get_estudiantes(
             "nombre":        e.nombre,
             "apellido":      e.apellido,
             "anio":          e.anio,
-            "mencion":       e.mencion,
+            "mencion":       _nombre_mencion(e.mencion, db),
             "materias":      materias,
         })
     return resultado
 
-@router.get("/estudiantes/{id_estudiante}/kardex", response_model=PerfilEstudianteCompletoOut)
+@router.get("/{id_estudiante}/kardex", response_model=PerfilEstudianteCompletoOut)
 def obtener_perfil_estudiante_detallado(id_estudiante: UUID, db: Session = Depends(get_db)):
     # 1. Buscar al estudiante
     estudiante = db.query(models.Estudiante).filter(models.Estudiante.id_estudiante == id_estudiante).first()
@@ -132,14 +145,14 @@ def obtener_perfil_estudiante_detallado(id_estudiante: UUID, db: Session = Depen
             nombre_materia=materia.nombre_materia,
             parciales=lista_parciales_con_nota
         ))
+    nombre_mencion = _nombre_mencion(estudiante.mencion, db)
 
-    # 3. Retornar el objeto completo
     return PerfilEstudianteCompletoOut(
         id_estudiante=estudiante.id_estudiante,
         nombre=estudiante.nombre,
         apellido=estudiante.apellido,
         matricula=estudiante.matricula,
-        mencion=estudiante.mencion,
+        mencion=nombre_mencion,
         materias=materias_resumen
     )
 
@@ -227,56 +240,7 @@ def eliminar_estudiante(id_estudiante: UUID, db: Session = Depends(get_db)):
     db.delete(estudiante)
     db.commit()
     return None
-# @router.get("/estudiantes/")
-# def get_estudiantes(db: Session = Depends(get_db)):
-#     """Lista todos los estudiantes con sus materias, parciales y notas."""
-#     estudiantes = db.query(models.Estudiante).all()
 
-#     resultado = []
-#     for e in estudiantes:
-#         materias = []
-#         for inscripcion in e.inscripciones:
-#             m = inscripcion.materia
-#             materias.append({
-#                 "id_materia":     m.id_materia,
-#                 "sigla":          m.sigla,
-#                 "nombre_materia": m.nombre_materia,
-#                 "horario":        m.horario,
-#                 "anio":           m.anio,
-#                 "parciales": [
-#                     {
-#                         "id_parcial":     p.id_parcial,
-#                         "nombre_parcial": p.nombre_parcial,
-#                         "tipo":           p.tipo,
-#                         "fecha":          str(p.fecha) if p.fecha else None,
-#                         "valoracion":     p.valoracion,
-#                         "nota":           next(
-#                             (float(n.nota) if n.nota is not None else None
-#                              for n in e.notas if n.id_parcial == p.id_parcial),
-#                             None
-#                         ),
-#                         "observacion":    next(
-#                             (n.observacion
-#                              for n in e.notas if n.id_parcial == p.id_parcial),
-#                             None
-#                         ),
-#                     }
-#                     for p in m.parciales
-#                 ],
-#             })
-#         resultado.append({
-#             "id_estudiante": e.id_estudiante,
-#             "ci_estudiante": e.ci_estudiante,
-#             "matricula":     e.matricula,
-#             "nombre":        e.nombre,
-#             "apellido":      e.apellido,
-#             "anio":          e.anio,
-#             "mencion":       e.mencion,
-#             "materias":      materias,
-#         })
-#     return resultado
-
-# ── PATCH /notas/{id_estudiante}/{id_parcial} ─────────────────────────────────
 @router.patch("/notas/{id_estudiante}/{id_parcial}", tags=["Admin - Estudiantes"])
 def update_nota(
     id_estudiante: UUID,
@@ -379,3 +343,38 @@ def inscribir_estudiante(
         "sigla":          materia.sigla,
         "nombre_materia": materia.nombre_materia,
     }
+
+@router.get("/{id_materia}/inscritos")
+def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
+    """Lista todos los estudiantes inscritos en una materia."""
+    materia = _get_materia_or_404(id_materia, db)
+    
+    return [
+        {
+            "id_estudiante": str(i.estudiante.id_estudiante),
+            "ci_estudiante": i.estudiante.ci_estudiante,
+            "matricula":     i.estudiante.matricula,
+            "nombre":        i.estudiante.nombre,
+            "apellido":      i.estudiante.apellido,
+            "anio":          i.estudiante.anio,
+            "mencion":       i.estudiante.mencion,
+        }
+        for i in materia.inscripciones
+    ]
+
+@router.get("/{id_materia}/parciales")
+def listar_parciales_materia(id_materia: UUID, db: Session = Depends(get_db)):
+    """Lista todos los parciales de una materia (parciales + prácticas)."""
+    parciales = db.query(models.Parcial).filter(
+        models.Parcial.id_materia == id_materia
+    ).all()
+    return [
+        {
+            "id_parcial":     str(p.id_parcial),
+            "nombre_parcial": p.nombre_parcial,
+            "valoracion":     p.valoracion,
+            "tipo":           p.tipo,
+            "fecha":          str(p.fecha) if p.fecha else None,
+        }
+        for p in parciales
+    ]
