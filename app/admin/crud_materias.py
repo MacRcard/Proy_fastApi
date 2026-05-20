@@ -32,15 +32,29 @@ def _build_out(m: models.Materia) -> MateriaOut:
             nombre     = m.auxiliar.nombre,
             email      = m.auxiliar.email,
         ) if m.auxiliar else None,
-        parciales   = [
+        parciales = [
             ParcialResumen(
                 id_parcial     = p.id_parcial,
                 nombre_parcial = p.nombre_parcial,
                 fecha          = p.fecha,
                 valoracion     = p.valoracion,
                 tipo           = p.tipo,
+                parcial_grupal = None,
+                hijos = [
+                    ParcialResumen(
+                        id_parcial     = h.id_parcial,
+                        nombre_parcial = h.nombre_parcial,
+                        fecha          = h.fecha,
+                        valoracion     = h.valoracion,
+                        tipo           = h.tipo,
+                        parcial_grupal = h.parcial_grupal,
+                        hijos          = [],
+                    )
+                    for h in p.hijos
+                ] if p.tipo == "grupal" else [],
             )
             for p in m.parciales
+            if p.parcial_grupal is None    # ← solo raíces
         ],
     )
 
@@ -219,8 +233,7 @@ def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
             "id_estudiante": str(i.estudiante.id_estudiante),
             "ci_estudiante": i.estudiante.ci_estudiante,
             "matricula":     i.estudiante.matricula,
-            "nombre":        i.estudiante.nombre,
-            "apellido":      i.estudiante.apellido,
+            "nombre_completo": i.estudiante.nombre_completo,
             "anio":          i.estudiante.anio,
             "mencion":       i.estudiante.mencion,
         }
@@ -229,18 +242,31 @@ def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
 
 @router.get("/{id_materia}/parciales")
 def listar_parciales_materia(id_materia: UUID, db: Session = Depends(get_db)):
-    """Lista todos los parciales de una materia (parciales + prácticas)."""
-    parciales = db.query(models.Parcial).filter(
-        models.Parcial.id_materia == id_materia
+    raices = db.query(models.Parcial).filter(
+        models.Parcial.id_materia     == id_materia,
+        models.Parcial.parcial_grupal == None,
     ).all()
-    return [
-        {
+
+    def fmt(p: models.Parcial) -> dict:
+        return {
             "id_parcial":     str(p.id_parcial),
             "nombre_parcial": p.nombre_parcial,
             "valoracion":     p.valoracion,
             "tipo":           p.tipo,
             "fecha":          str(p.fecha) if p.fecha else None,
+            "parcial_grupal": None,
+            "hijos": [
+                {
+                    "id_parcial":     str(h.id_parcial),
+                    "nombre_parcial": h.nombre_parcial,
+                    "valoracion":     h.valoracion,
+                    "tipo":           h.tipo,
+                    "fecha":          str(h.fecha) if h.fecha else None,
+                    "parcial_grupal": str(h.parcial_grupal),
+                    "hijos":          [],
+                }
+                for h in p.hijos          # relación ORM del modelo
+            ] if p.tipo == "grupal" else [],
         }
-        for p in parciales
-    ]
-    
+
+    return [fmt(p) for p in raices]

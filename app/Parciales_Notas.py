@@ -9,7 +9,7 @@ from pydantic import BaseModel, field_validator
 from .database import get_db
 from . import models
 
-from .admin.crud_admin import (ParcialCreate, ParcialUpdate, NotaUpdate)
+from .admin.schemas_notas import (ParcialCreate, ParcialUpdate, NotaUpdate)
 
 router = APIRouter(prefix="/notas", tags=["Parciales y Notas"])
 

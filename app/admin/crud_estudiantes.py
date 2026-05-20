@@ -4,6 +4,8 @@ from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.Parciales_Notas import _get_materia_or_404
 SECRET_KEY = "7e19d6b108943e9602f19a86d2c08f5533dc13abe9c95bf4f628eb7cb79a4b45"
 ALGORITHM  = "HS256"
 bearer  = HTTPBearer()
@@ -30,10 +32,9 @@ def _nombre_mencion(mencion_uuid, db) -> str | None:
 
 @router.get("/Estudiantes-filter/")
 def get_estudiantes(
-    mencion:  Optional[str] = None,
-    anio:     Optional[int] = None,
-    nombre:   Optional[str] = None,
-    apellido: Optional[str] = None,
+    mencion:         Optional[str] = None,
+    anio:            Optional[int] = None,
+    nombre_completo: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -41,20 +42,16 @@ def get_estudiantes(
     Filtros opcionales combinables:
       - ?mencion=fisioterapia
       - ?anio=1
-      - ?nombre=carlos
-      - ?apellido=mendoza
+      - ?nombre_completo=carlos
       - ?mencion=laboratorio&anio=2
     """
     q = db.query(models.Estudiante)
     if mencion:
-        # estudiante.mencion es texto directo (ej: 'fisioterapia'), no UUID
         q = q.filter(models.Estudiante.mencion.ilike(f"%{mencion}%"))
     if anio:
         q = q.filter(models.Estudiante.anio == anio)
-    if nombre:
-        q = q.filter(models.Estudiante.nombre.ilike(f"%{nombre}%"))
-    if apellido:
-        q = q.filter(models.Estudiante.apellido.ilike(f"%{apellido}%"))
+    if nombre_completo:
+        q = q.filter(models.Estudiante.nombre_completo.ilike(f"%{nombre_completo}%"))
     estudiantes = q.all()
     if not estudiantes:
         return []
@@ -91,14 +88,13 @@ def get_estudiantes(
                 ],
             })
         resultado.append({
-            "id_estudiante": e.id_estudiante,
-            "ci_estudiante": e.ci_estudiante,
-            "matricula":     e.matricula,
-            "nombre":        e.nombre,
-            "apellido":      e.apellido,
-            "anio":          e.anio,
-            "mencion":       _nombre_mencion(e.mencion, db),
-            "materias":      materias,
+            "id_estudiante":  e.id_estudiante,
+            "ci_estudiante":  e.ci_estudiante,
+            "matricula":      e.matricula,
+            "nombre_completo": e.nombre_completo,
+            "anio":           e.anio,
+            "mencion":        _nombre_mencion(e.mencion, db),
+            "materias":       materias,
         })
     return resultado
 
@@ -149,8 +145,7 @@ def obtener_perfil_estudiante_detallado(id_estudiante: UUID, db: Session = Depen
 
     return PerfilEstudianteCompletoOut(
         id_estudiante=estudiante.id_estudiante,
-        nombre=estudiante.nombre,
-        apellido=estudiante.apellido,
+        nombre_completo=estudiante.nombre_completo,
         matricula=estudiante.matricula,
         mencion=nombre_mencion,
         materias=materias_resumen
@@ -302,7 +297,7 @@ def update_nota(
     }
 
 # ── POST /inscripciones/ ──────────────────────────────────────────────────────    
-@router.post("/inscripciones/", tags=["Admin - Estudiantes"], status_code=201)
+@router.post("/inscripciones/+", tags=["Admin - Estudiantes"], status_code=201)
 def inscribir_estudiante(
     id_estudiante: UUID,
     id_materia:    UUID,
@@ -344,6 +339,38 @@ def inscribir_estudiante(
         "nombre_materia": materia.nombre_materia,
     }
 
+@router.delete("/inscripciones/-", status_code=204, tags=["Admin - Estudiantes"])
+def desinscribir_estudiante(
+    id_estudiante: UUID,
+    id_materia:    UUID,
+    db:            Session = Depends(get_db),
+):
+    """Elimina la inscripción y todas las notas del estudiante en esa materia."""
+    inscripcion = db.query(models.Inscrito).filter(
+        models.Inscrito.id_estudiante == id_estudiante,
+        models.Inscrito.id_materia    == id_materia,
+    ).first()
+    if not inscripcion:
+        raise HTTPException(status_code=404, detail="El estudiante no está inscrito en esta materia")
+
+    # Obtener todos los id_parcial de esa materia
+    ids_parciales = [
+        p.id_parcial
+        for p in db.query(models.Parcial.id_parcial)
+        .filter(models.Parcial.id_materia == id_materia)
+        .all()
+    ]
+
+    # Borrar todas las notas del estudiante en esos parciales
+    if ids_parciales:
+        db.query(models.Nota).filter(
+            models.Nota.id_estudiante == id_estudiante,
+            models.Nota.id_parcial.in_(ids_parciales),
+        ).delete(synchronize_session=False)
+
+    db.delete(inscripcion)
+    db.commit()
+
 @router.get("/{id_materia}/inscritos")
 def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
     """Lista todos los estudiantes inscritos en una materia."""
@@ -351,13 +378,12 @@ def listar_inscritos_materia(id_materia: UUID, db: Session = Depends(get_db)):
     
     return [
         {
-            "id_estudiante": str(i.estudiante.id_estudiante),
-            "ci_estudiante": i.estudiante.ci_estudiante,
-            "matricula":     i.estudiante.matricula,
-            "nombre":        i.estudiante.nombre,
-            "apellido":      i.estudiante.apellido,
-            "anio":          i.estudiante.anio,
-            "mencion":       i.estudiante.mencion,
+            "id_estudiante":  str(i.estudiante.id_estudiante),
+            "ci_estudiante":  i.estudiante.ci_estudiante,
+            "matricula":      i.estudiante.matricula,
+            "nombre_completo": i.estudiante.nombre_completo,
+            "anio":           i.estudiante.anio,
+            "mencion":        i.estudiante.mencion,
         }
         for i in materia.inscripciones
     ]

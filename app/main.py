@@ -13,15 +13,15 @@ from .auth import (get_user_by_username,authenticate_password,create_token,get_c
 
 from .parciales import router as parciales_router
 from .practicas import router as practicas_router
+from .admin.bulk_notas import router as bulk_notas_router
 from .notas_docente import router as notas_docentes_router
 from .notas_estudiantes import router as notas_estudiantes_router
 from .inscritos import router as inscritos_router
 from .admin.crud_admin import router as admin_router
 from .admin.crud_materias import router as materias_router
 from .admin.crud_estudiantes import router as estudiantes_router
-from .admin.pacriales_notas import router as notas_router
+from .admin.parciales_notas import router as notas_router
 # excel
-from .admin.excel_handler import router as excel_router
 
 from .database import engine, get_db
 from . import models
@@ -41,6 +41,8 @@ app.add_middleware(
 )
 
 models.Base.metadata.create_all(bind=engine)
+# excel
+app.include_router(bulk_notas_router)
 
 app.include_router(parciales_router)
 app.include_router(practicas_router)
@@ -51,8 +53,6 @@ app.include_router(admin_router)
 app.include_router(materias_router)
 app.include_router(estudiantes_router)
 app.include_router(notas_router)
-# excel
-app.include_router(excel_router)
 
 # nuevo admin
 class AdminCreate(BaseModel):

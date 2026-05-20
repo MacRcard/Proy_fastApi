@@ -55,8 +55,7 @@ class Estudiante(Base):
     id_estudiante = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ci_estudiante = Column(Integer, nullable=False)
     matricula     = Column(Integer, nullable=False, unique=True)
-    nombre        = Column(String(100), nullable=False)
-    apellido      = Column(String(100), nullable=False)
+    nombre_completo = Column(String(225), nullable=False)
     anio          = Column(Integer, nullable=True)
     mencion       = Column(String(100), nullable=True)  # nombre directo, no FK
 
@@ -107,9 +106,13 @@ class Parcial(Base):
     valoracion     = Column(Integer, nullable=True)
     id_materia     = Column(UUID(as_uuid=True), ForeignKey("materia.id_materia", ondelete="CASCADE"), nullable=True)
     tipo           = Column(String(50), nullable=True, default="parcial")
+    parcial_grupal = Column(UUID(as_uuid=True),ForeignKey("parcial.id_parcial", ondelete="SET NULL"),nullable=True,default=None)
 
     materia = relationship("Materia", back_populates="parciales")
     notas   = relationship("Nota",    back_populates="parcial", cascade="all, delete-orphan")
+    
+    hijos = relationship("Parcial",foreign_keys=[parcial_grupal], back_populates="padre",cascade="all, delete-orphan")
+    padre = relationship("Parcial",foreign_keys=[parcial_grupal],back_populates="hijos",remote_side="Parcial.id_parcial")
 
 
 # ── NOTAS ─────────────────────────────────────────────────────────────────────

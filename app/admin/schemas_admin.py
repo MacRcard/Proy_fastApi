@@ -147,25 +147,30 @@ class ParcialResumen(BaseModel):
     fecha:          Optional[date]
     valoracion:     Optional[int]
     tipo:           Optional[str]
+    parcial_grupal: Optional[UUID] = None
+    hijos:          List["ParcialResumen"] = []
+
+    class Config:
+        from_attributes = True
+
+ParcialResumen.model_rebuild() 
 
 # schemas ESTUDIANTE --------------------------
 class EstudianteBase(BaseModel):
     ci_estudiante:  Optional[int]
     matricula:      Optional[int]
-    nombre:         str
-    apellido:       str
+    nombre_completo: str
     anio:           int
     mencion:        str
 
 class EstudianteCreate(BaseModel):
     ci_estudiante: int
     matricula:     int
-    nombre:        str
-    apellido:      str
+    nombre_completo: str
     anio:          Optional[int] = None
     mencion:       Optional[str] = None
 
-    @field_validator("nombre", "apellido")
+    @field_validator("nombre_completo")
     @classmethod
     def no_vacio(cls, v: str) -> str:
         if not v.strip():
@@ -183,12 +188,11 @@ class EstudianteCreate(BaseModel):
 class EstudianteUpdate(BaseModel):
     ci_estudiante: Optional[int]  = None
     matricula:     Optional[int]  = None
-    nombre:        Optional[str]  = None
-    apellido:      Optional[str]  = None
+    nombre_completo: Optional[str]  = None
     anio:          Optional[int]  = None
     mencion:       Optional[str]  = None
 
-    @field_validator("nombre", "apellido", mode="before")
+    @field_validator("nombre_completo", mode="before")
     @classmethod
     def no_vacio(cls, v):
         if v is not None and not str(v).strip():
@@ -207,8 +211,7 @@ class EstudianteOut(BaseModel):
     id_estudiante: UUID
     ci_estudiante: int
     matricula:     int
-    nombre:        str
-    apellido:      str
+    nombre_completo: str
     anio:          Optional[int]
     mencion:       Optional[str]
 

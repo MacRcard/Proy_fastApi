@@ -193,8 +193,7 @@ def listar_notas_parcial(
     return [
         {
             "id_estudiante":       n.id_estudiante,
-            "nombre":              n.estudiante.nombre,
-            "apellido":            n.estudiante.apellido,
+            "nombre_completo":     n.estudiante.nombre_completo,
             "nota":                float(n.nota) if n.nota is not None else None,
             "observacion":         n.observacion,
             "ultima_modificacion": n.ultima_modificacion,

@@ -63,13 +63,16 @@ class NotaDetalleOut(BaseModel):
     observacion: Optional[str] = None
 
 class ParcialConNotaOut(BaseModel):
-    id_parcial: UUID
+    id_parcial:     UUID
     nombre_parcial: Optional[str]
-    fecha: Optional[date]
-    tipo: Optional[str]
-    valoracion: Optional[int]
-    # Aquí anidamos la nota específica del estudiante para este parcial
-    nota_detalle: Optional[NotaDetalleOut] = None
+    fecha:          Optional[date]
+    tipo:           Optional[str]
+    valoracion:     Optional[int]
+    parcial_grupal: Optional[UUID] = None
+    nota_detalle:   Optional[NotaDetalleOut] = None
+    hijos:          List["ParcialConNotaOut"] = []
+
+ParcialConNotaOut.model_rebuild()
 
 class MateriaConEvaluacionesOut(BaseModel):
     id_materia: UUID
@@ -79,8 +82,7 @@ class MateriaConEvaluacionesOut(BaseModel):
 
 class PerfilEstudianteCompletoOut(BaseModel):
     id_estudiante: UUID
-    nombre: str
-    apellido: str
+    nombre_completo: str
     matricula: int
     mencion: Optional[str]
     materias: List[MateriaConEvaluacionesOut]
