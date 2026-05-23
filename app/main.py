@@ -14,6 +14,7 @@ from .auth import (get_user_by_username,authenticate_password,create_token,get_c
 from .parciales import router as parciales_router
 from .practicas import router as practicas_router
 from .admin.bulk_notas import router as bulk_notas_router
+from .bulk_excel.bulk_ingresarnotas_excel import router as bulk_ingresarnotas_router
 from .notas_docente import router as notas_docentes_router
 from .notas_estudiantes import router as notas_estudiantes_router
 from .inscritos import router as inscritos_router
@@ -43,6 +44,7 @@ app.add_middleware(
 models.Base.metadata.create_all(bind=engine)
 # excel
 app.include_router(bulk_notas_router)
+app.include_router(bulk_ingresarnotas_router)
 
 app.include_router(parciales_router)
 app.include_router(practicas_router)
